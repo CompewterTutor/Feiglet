@@ -2,8 +2,7 @@
 
 Milestone goal: Extend Feiglet beyond FIGlet 2.2.5 feature set with image-to-ASCII
 conversion, system font → FIGfont creation, interactive TUI preview, and rich
-output formats (PNG, GIF, colored ANSI). Inspired by
-[vendor_forks/ascii-image-converter](../vendor_forks/ascii-image-converter).
+output formats (PNG, GIF, colored ANSI). Image-to-ASCII via `rascii` crate.
 
 ---
 
