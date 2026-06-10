@@ -592,10 +592,11 @@ Then list what must be fixed before the merge can proceed." \
 
     if grep -q "PHASE_APPROVED" "$REVIEW_LOG" 2>/dev/null; then
       good "Review approved the merge — merging ${BASE_BRANCH} → main."
-      if ! git diff --quiet docs/ralph-log.md 2>/dev/null; then
-        git add docs/ralph-log.md
-        git commit -m "docs: ralph-log — phase ${MINOR_VERSION} wrapped up"
-        git push origin "$BASE_BRANCH"
+      # Commit any review-agent fixes before switching branches
+      if ! git diff --quiet || ! git diff --cached --quiet; then
+        git add -A
+        git commit -m "fix: address phase ${MINOR_VERSION} review findings" || true
+        git push origin "$BASE_BRANCH" 2>/dev/null || true
       fi
       git checkout "${DEFAULT_BRANCH}"
       git pull --ff-only origin "${DEFAULT_BRANCH}" >/dev/null 2>&1 ||
