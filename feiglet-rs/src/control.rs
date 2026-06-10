@@ -405,6 +405,25 @@ pub fn read_control<P: AsRef<Path>>(path: P, state: &mut ControlState) -> Result
     Ok(())
 }
 
+pub fn remap_char(state: &ControlState, c: u32) -> u32 {
+    let mut c = c;
+    let mut i = 0;
+    let commands = &state.commands;
+    while i < commands.len() {
+        let cmd = &commands[i];
+        if cmd.thecommand != 0 && c >= cmd.rangelo && c <= cmd.rangehi {
+            c = c.wrapping_add(cmd.offset as u32);
+            i += 1;
+            while i < commands.len() && commands[i].thecommand != 0 {
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -861,5 +880,103 @@ mod tests {
         assert_eq!(state.commands.len(), 1);
         assert_eq!(state.commands[0].rangelo, b'a' as u32);
         assert_eq!(state.commands[0].offset, 1);
+    }
+
+    fn build_remap_state(commands: &[u8]) -> ControlState {
+        let content = String::from_utf8(commands.to_vec()).unwrap();
+        let file = write_temp_file(&content);
+        let mut state = test_state();
+        read_control(&file, &mut state).unwrap();
+        state
+    }
+
+    #[test]
+    fn test_remap_empty_commands() {
+        let state = test_state();
+        assert_eq!(remap_char(&state, b'a' as u32), b'a' as u32);
+        assert_eq!(remap_char(&state, b'z' as u32), b'z' as u32);
+    }
+
+    #[test]
+    fn test_remap_single_char() {
+        let state = build_remap_state(b"t a b\n");
+        assert_eq!(remap_char(&state, b'a' as u32), b'b' as u32);
+        assert_eq!(remap_char(&state, b'c' as u32), b'c' as u32);
+    }
+
+    #[test]
+    fn test_remap_range() {
+        let state = build_remap_state(b"t a-z A-Z\n");
+        assert_eq!(remap_char(&state, b'm' as u32), b'M' as u32);
+        assert_eq!(remap_char(&state, b'z' as u32), b'Z' as u32);
+        assert_eq!(remap_char(&state, b'A' as u32), b'A' as u32);
+    }
+
+    #[test]
+    fn test_remap_no_match() {
+        let state = build_remap_state(b"t x y\n");
+        assert_eq!(remap_char(&state, b'a' as u32), b'a' as u32);
+    }
+
+    #[test]
+    fn test_remap_negative_offset() {
+        let state = build_remap_state(b"t b a\n");
+        assert_eq!(remap_char(&state, b'b' as u32), b'a' as u32);
+        assert_eq!(remap_char(&state, b'a' as u32), b'a' as u32);
+    }
+
+    #[test]
+    fn test_remap_out_of_range() {
+        let state = build_remap_state(b"t a-z A-Z\n");
+        assert_eq!(remap_char(&state, b'0' as u32), b'0' as u32);
+    }
+
+    #[test]
+    fn test_remap_freeze_prevents_second_match_in_block() {
+        let state = build_remap_state(b"f\nt a b\nt a c\n");
+        // Both t a b and t a c are in same block (after freeze)
+        // First match applies: 'a' -> 'b' (offset 1)
+        assert_eq!(remap_char(&state, b'a' as u32), b'b' as u32);
+    }
+
+    #[test]
+    fn test_remap_two_blocks_sequential_apply() {
+        let state = build_remap_state(b"t a b\nf\nt b c\n");
+        // Block 1: 'a' -> 'b'
+        // Block 2: 'b' -> 'c'
+        // 'a' -> block1: 'b', block2: 'b' not in range -> stays 'b'
+        assert_eq!(remap_char(&state, b'a' as u32), b'b' as u32);
+        // 'b' -> block1: 'b' in range -> 'c', block2: 'c' not in range -> stays 'c'
+        assert_eq!(remap_char(&state, b'b' as u32), b'c' as u32);
+    }
+
+    #[test]
+    fn test_remap_three_blocks_chained() {
+        let state = build_remap_state(b"t a b\nf\nt b c\nf\nt c d\n");
+        assert_eq!(remap_char(&state, b'a' as u32), b'd' as u32);
+        assert_eq!(remap_char(&state, b'b' as u32), b'c' as u32);
+        assert_eq!(remap_char(&state, b'c' as u32), b'd' as u32);
+        assert_eq!(remap_char(&state, b'd' as u32), b'd' as u32);
+    }
+
+    #[test]
+    fn test_remap_mapping_table_entry() {
+        let state = build_remap_state(b"65 90\n");
+        assert_eq!(remap_char(&state, 65), 90);
+        assert_eq!(remap_char(&state, 66), 66);
+    }
+
+    #[test]
+    fn test_remap_upper_flc_maps_a_to_a_upper() {
+        let mut state = test_state();
+        read_control([FONTS_DIR, "upper.flc"].concat(), &mut state).unwrap();
+        assert_eq!(remap_char(&state, b'a' as u32), b'A' as u32);
+    }
+
+    #[test]
+    fn test_remap_upper_flc_maps_z_to_z_upper() {
+        let mut state = test_state();
+        read_control([FONTS_DIR, "upper.flc"].concat(), &mut state).unwrap();
+        assert_eq!(remap_char(&state, b'z' as u32), b'Z' as u32);
     }
 }
