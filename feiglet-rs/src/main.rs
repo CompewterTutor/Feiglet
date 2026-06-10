@@ -1,4 +1,5 @@
 use clap::Parser;
+use feiglet::control;
 use feiglet::font::{self, FIGfont, DEUTSCH_CHARS};
 use feiglet::render::{add_char, lookup_char, render_line, split_line, Justification};
 use feiglet::smush::SmushMode;
@@ -120,6 +121,7 @@ struct CliConfig {
     fontdirname: String,
     fontname: String,
     multibyte: u32,
+    controlfile: Option<String>,
 }
 
 impl Default for CliConfig {
@@ -136,6 +138,7 @@ impl Default for CliConfig {
             fontdirname: "fonts".to_string(),
             fontname: "standard".to_string(),
             multibyte: 0,
+            controlfile: None,
         }
     }
 }
@@ -309,6 +312,8 @@ impl CliConfig {
             config.fontname = val;
         }
 
+        config.controlfile = args.controlfile;
+
         config
     }
 }
@@ -425,6 +430,18 @@ fn run(config: CliConfig, message: Vec<String>) {
         }
     };
 
+    let control_state = match config.controlfile {
+        Some(ref path) => {
+            let mut state = control::ControlState::default();
+            if let Err(e) = control::read_control(path, &mut state) {
+                eprintln!("Error reading control file: {e}");
+                process::exit(1);
+            }
+            state
+        }
+        None => control::ControlState::default(),
+    };
+
     let smush_mode = match config.smushoverride {
         SmushOverride::No => SmushMode::new(font.full_layout as u32),
         SmushOverride::Yes => SmushMode::new(config.smushmode),
@@ -519,8 +536,7 @@ fn run(config: CliConfig, message: Vec<String>) {
             }
         }
 
-        // handlemapping (identity for now — Phase 1.4.2)
-        // c = handlemapping(c);
+        c = control::remap_char(&control_state, c);
 
         // Space normalization
         if c <= 127 && (c as u8 as char).is_ascii_whitespace() {

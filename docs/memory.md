@@ -278,3 +278,27 @@ function in `control.rs`. Byte-level parser mirrors C `readcontrol()`:
   C `Zgetc`/`Zungetc` pattern
 - 35 unit tests covering all command types, escape sequences, numeric
   formats (decimal, octal, hex), CRLF handling, fixture file parsing
+
+### 1.4.2 — Character remapping via control files
+
+Added `remap_char()` in `control.rs` — port of C `handlemapping()`. Iterates
+`ControlState.commands` sequentially. For each translate command (thecommand=1),
+checks if char `c` is in `[rangelo, rangehi]` range. On match: applies offset
+via `wrapping_add` (matching C's signed `inchr` overflow semantics), then skips
+remaining translate commands in current block (stops at freeze or end). Freeze
+commands (thecommand=0) act as block boundaries — only first matching translate
+within each block applies. Multiple blocks apply sequentially across freeze
+boundaries. `remap_char()` returns modified char; identity if no match.
+
+Wired into `run()` in `main.rs`: `-C` flag loads control file via `read_control()`
+into `ControlState` after font loading. `remap_char()` called in main event loop
+after Deutsch re-routing, replacing placeholder identity. Added `controlfile:
+Option<String>` to `CliConfig`.
+
+14 unit tests: empty commands, single char, range, no match, negative offset,
+out of range, freeze-block skip (second match in same block skipped),
+two-block sequential apply, three-block chain, mapping table entry, upper.flc
+fixture (a→A, z→Z). All tests define state via `build_remap_state()` helper
+that reads control file content then runs `remap_char`. No `.unwrap()` in
+production — error handling via `Result` + `process::exit(1)` on control file
+load failure.
