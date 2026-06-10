@@ -8,25 +8,25 @@ and multi-byte input.
 
 ## Phase 1.1 — Crate Scaffold & Font Parser
 
-- [ ] `1.1.1` Create `feiglet` crate in workspace
+- [x] `1.1.1` Create `feiglet` crate in workspace
   - **Goal:** Rust crate `feiglet` added to workspace. Compiles clean.
   - **Touches:** `feiglet-rs/Cargo.toml`, `feiglet-rs/src/lib.rs`
   - **Success:** `cargo build -p feiglet` succeeds. Clippy clean.
   - **Tests:** Empty crate compiles.
   - **Difficulty:** Low
 
-- [ ] `1.1.2` Define core types: FIGfont, FIGcharacter, FCharnode
+- [x] `1.1.2` Define core types: FIGfont, FIGcharacter, FCharnode
   - **Goal:** Port C structs (`fcharnode`, `inchr`, `outchr`) to Rust types.
     `FIGfont` struct owns parsed font data. `FCharnode` maps char code to
     rows of sub-character strings. Use `Vec<Vec<&str>>` or `Vec<String>`.
     `Hardblank` tracked as `char`. `CharHeight`, `Baseline`, `MaxLength`,
     `OldLayout`, `FullLayout`, `PrintDirection`, `CommentLines` fields.
-  - **Touches:** `feiglet-rs/src/font.rs`
+  - **Touches:** `feiglet-rs/src/font.rs`, `feiglet-rs/Cargo.toml`
   - **Success:** All types defined + documented. Round-trip serde tests.
   - **Tests:** Type construction + default tests.
   - **Difficulty:** Low
 
-- [ ] `1.1.3` FIGfont magic number + header line parser
+- [x] `1.1.3` FIGfont magic number + header line parser
   - **Goal:** Parse `flf2a$ 6 5 20 15 3 0 143 229` header. Validate magic
     number (`flf2a`). Extract hardblank char, height, baseline, max_length,
     old_layout, comment_lines, print_direction, full_layout, codetag_count.
@@ -36,7 +36,7 @@ and multi-byte input.
   - **Tests:** Fixture-based header parse tests. Error case tests.
   - **Difficulty:** Low
 
-- [ ] `1.1.4` FIGcharacter data parser (required ASCII + Deutsch chars)
+- [x] `1.1.4` FIGcharacter data parser (required ASCII + Deutsch chars)
   - **Goal:** Read the 95 required ASCII FIGcharacters (codes 32-126) plus 7
     Deutsch chars (196, 214, 220, 228, 246, 252, 223). Remove trailing
     endmark characters (last block of identical chars per line). Store rows
@@ -46,7 +46,7 @@ and multi-byte input.
   - **Tests:** Parse known FIGfont fixture. Verify char count = 102.
   - **Difficulty:** Medium
 
-- [ ] `1.1.5` Code-tagged FIGcharacter parser
+- [x] `1.1.5` Code-tagged FIGcharacter parser
   - **Goal:** After required chars, read variable-length code-tagged chars.
     Each has a numeric code tag line followed by height rows. Build
     `HashMap<inchr, FIGcharacter>`. Handle negative codes. Skip code -1
@@ -56,7 +56,7 @@ and multi-byte input.
   - **Tests:** Parse known FIGfont with codetagged chars. Count matches `codetag_count`.
   - **Difficulty:** Medium
 
-- [ ] `1.1.6` TLF font support (TOIlet format)
+- [x] `1.1.6` TLF font support (TOIlet format)
   - **Goal:** Support `tlf2a` magic number. UTF-8 encoded rows instead of
     raw bytes. Shared parser infrastructure with FIGfont, differing only in
     magic check and row encoding.
@@ -65,7 +65,7 @@ and multi-byte input.
   - **Tests:** Parse `emboss.tlf` fixture. Compare with C output.
   - **Difficulty:** Medium
 
-- [ ] `1.1.7` Compressed font support (zip/deflate)
+- [x] `1.1.7` Compressed font support (zip/deflate)
   - **Goal:** Read `.flf` files inside ZIP archives using `zip` crate.
     Implement `FIGopen()` equivalent: try font directory + suffix, then
     bare path. Fall back to ZIP reading. Use `flate2` for raw deflate if
@@ -75,7 +75,7 @@ and multi-byte input.
   - **Tests:** ZIP font loading test.
   - **Difficulty:** Medium
 
-- [ ] `1.1.8` Phase merge: release/1.1 → main
+- [x] `1.1.8` Phase merge: release/1.1 → master
   - **Goal:** Phase review passes, branch merges cleanly.
   - **Touches:** CI, todo-v1.md checkboxes
   - **Success:** All 1.1.x tasks checked. Review approved.
