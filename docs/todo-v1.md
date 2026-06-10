@@ -225,7 +225,7 @@ and multi-byte input.
   - **Tests:** Escape sequence tests.
   - **Difficulty:** High
 
-- [ ] `1.4.4` Phase merge: release/1.4 → main
+- [x] `1.4.4` Phase merge: release/1.4 → main
   - **Difficulty:** Low
 
 ---

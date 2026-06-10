@@ -250,18 +250,11 @@ Main loop matches C exactly:
 ### 1.3.5 — Phase merge: release/1.3 → master
 
 Merged all Phase 1.3 work into default branch (master). Phase 1.3 complete:
-<<<<<<< HEAD
 CLI argument parsing (all 27 FIGlet flags), info codes (-I flag with 6 codes),
 terminal width detection (-t flag via termion), main event loop with full
 FIGlet 2.2.5 input processing pipeline. All 4 subtasks (1.3.1–1.3.4)
 implemented, tested, merged. Phase 1.4 (Control Files & Character Mapping)
 is next.
-=======
-CLI argument parsing (all 27 FIGlet flags), info codes (`-I` flag), terminal
-width detection (`-t` flag), main event loop with `InputIter` and line
-rendering. All 4 subtasks (1.3.1–1.3.4) implemented, tested, merged.
-Phase 1.4 (Control Files & Character Mapping) is next.
->>>>>>> release/1.3
 
 ### 1.4.1 — Control file parser
 
@@ -302,3 +295,24 @@ fixture (a→A, z→Z). All tests define state via `build_remap_state()` helper
 that reads control file content then runs `remap_char`. No `.unwrap()` in
 production — error handling via `Result` + `process::exit(1)` on control file
 load failure.
+
+### 1.4.3 — ISO 2022 character set handling
+
+Added `CharReader` trait with `next()`/`unget()` methods to `control.rs` —
+abstracts input for `iso2022()` to work with both `InputIter` and test
+`MockReader`. `ControlState::iso2022()` port of C `iso2022()` (figlet.c:1745-1875):
+processes ESC sequences for G0-G3 set designation, SO/SI GL shift, SS2/SS3
+temporary invocation, LS2/LS3 permanent, GL/GR zone processing with double-byte
+combining. `InputIter` implements `CharReader`. Main event loop dispatches via
+`config.multibyte == 0` to `control_state.iso2022()`. All `.unwrap_or(0)` calls
+match C's lenient second-byte read behavior. 15 unit tests covering all ISO 2022
+escape types, edge cases, plain passthrough.
+
+### 1.4.4 — Phase merge: release/1.4 → main
+
+Merged all Phase 1.4 work into default branch (master). Phase 1.4 complete:
+control file parser (`.flc` parsing with translate, freeze, multibyte mode,
+ISO 2022 charset commands), character remapping via `remap_char()` with freeze-
+block semantics, ISO 2022 character set handling with G0-G3/GL/GR/SS2/SS3.
+All 3 subtasks (1.4.1–1.4.3) implemented, tested, merged. Phase 1.5
+(Multi-byte Input) is next.

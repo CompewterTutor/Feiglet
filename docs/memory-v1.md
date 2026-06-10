@@ -120,3 +120,14 @@ Phase 1.2 complete — all 6 subtasks merged from `release/1.2` into `master`.
   ASCII reset via `ESC ( B`, EOF mid-escape, EOF mid-double-byte, ESC $ ( J
   (no B special case), gn state persistence, SS2 gl/gr restore, plain char
   passthrough, newline/space passthrough
+
+### 1.4.4 — Phase merge: release/1.4 → main
+
+Phase 1.4 complete — all 3 subtasks merged from `release/1.4` into `master`.
+- Control file parser (1.4.1): `read_control()` port with translate, freeze,
+  multibyte mode, ISO 2022 charset, and mapping table commands
+- Character remapping (1.4.2): `remap_char()` with freeze-block semantics,
+  range+offset matching C `handlemapping()`
+- ISO 2022 handling (1.4.3): `iso2022()` with G0-G3 set designation, GL/GR
+  shift, SS2/SS3 invocation, double-byte combining
+- Phase 1.5 (Multi-byte Input) begins next
