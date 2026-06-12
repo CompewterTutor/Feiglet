@@ -190,3 +190,7 @@ DONE: 1.6.5 merged into release/1.6.
 ## 2026-06-10 03:32
 
 All 1.6 tasks complete. Starting phase review.
+
+## 2026-06-12 14:45
+
+DONE: 2.0.1 merged into release/2.0.

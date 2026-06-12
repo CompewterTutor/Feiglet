@@ -321,4 +321,8 @@ Three bugs found in phase merge review:
   `--all-targets`. Argument 5 is `prevcharwidth: usize`, argument 6 is `mode: SmushMode`.
 - `calc_smush_amount` in `render.rs` was missing `#[allow(clippy::too_many_arguments)]` —
   pre-existing lint that needed fixing to pass the clippy gate.
+- `figby -f <name>` expects bare font name (no path prefix) and resolves via fontdir.
+  From repo root, pass `-d fonts/ -f standard` not `-f fonts/standard.flf`.
+- POSIX `case` patterns use glob syntax, not regex. Comma-separated list matching
+  uses `case ",$LIST," in *,"$ITEM",*)` — the simplest portable pattern.
 
