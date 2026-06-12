@@ -409,3 +409,13 @@ failures involve RTL, TLF fonts, paragraph mode — separate issues from the
 wordbreakmode bug.
 
 Phase 1.7 (Major Release: end-to-end verification + RC) is next.
+
+### 2.0.2 — Port make-examples script to CLI
+
+Created `scripts/make-examples.sh` — POSIX shell script that generates
+example output for every font file in `fonts/`. Supports `--sample-text`
+(default `"hello figby"`), `--fonts` (comma-separated whitelist),
+`--exclude` (comma-separated blacklist), and `--categories` (parsed but
+deferred). Resolves `figby` binary via PATH, `figby-rs/target/debug/figby`,
+or builds if missing. Uses `-d fonts/` flag so font resolution works from
+repo root. Output goes to `examples/` with a `.gitkeep` sentinel file.

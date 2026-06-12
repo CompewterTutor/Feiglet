@@ -20,7 +20,7 @@ overlay, layers, and animation timeline.
   - **Tests:** Check `--help` output contains expected flags.
   - **Difficulty:** Low
 
-- [ ] `2.0.2` Port make-examples script to CLI
+- [x] `2.0.2` Port make-examples script to CLI
   - **Goal:** Create `scripts/make-examples.sh` that generates example
     output files for every font. Accept: `--sample-text` (default:
     `"hello figby"`), `--fonts` (comma-separated whitelist), `--exclude`
