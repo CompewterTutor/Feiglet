@@ -598,3 +598,178 @@ fn test_palette_render_contains_labels() {
     assert!(output.contains("BG"), "palette missing BG indicator");
     assert!(output.contains("Recent"), "palette missing Recent label");
 }
+
+#[test]
+fn test_status_bar_shows_cursor_position() {
+    use crossterm::event::KeyCode;
+    use figby::tui::TuiApp;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    let mut app = TuiApp::new();
+    app.handle_key_event(KeyCode::Right);
+    app.handle_key_event(KeyCode::Down);
+
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|f| app.render(f)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let output: String = buffer.content().iter().map(|c| c.symbol()).collect();
+    assert!(output.contains("X:1"), "status bar missing X cursor");
+    assert!(output.contains("Y:1"), "status bar missing Y cursor");
+}
+
+#[test]
+fn test_status_bar_shows_zoom_level() {
+    use crossterm::event::KeyCode;
+    use figby::tui::TuiApp;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    let mut app = TuiApp::new();
+    app.handle_key_event(KeyCode::Char('+'));
+
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|f| app.render(f)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let output: String = buffer.content().iter().map(|c| c.symbol()).collect();
+    assert!(output.contains("Zoom:2x"), "status bar missing zoom level");
+}
+
+#[test]
+fn test_status_bar_shows_tool_name() {
+    use crossterm::event::KeyCode;
+    use figby::tui::TuiApp;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    let mut app = TuiApp::new();
+    app.handle_key_event(KeyCode::Char('e'));
+
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|f| app.render(f)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let output: String = buffer.content().iter().map(|c| c.symbol()).collect();
+    assert!(output.contains("Eraser"), "status bar missing tool name");
+}
+
+#[test]
+fn test_status_bar_shows_mode_name() {
+    use figby::tui::TuiApp;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    let mut app = TuiApp::new();
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|f| app.render(f)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let output: String = buffer.content().iter().map(|c| c.symbol()).collect();
+    assert!(
+        output.contains("Font Editor"),
+        "status bar missing mode name"
+    );
+}
+
+#[test]
+fn test_status_bar_unsaved_indicator() {
+    use figby::tui::TuiApp;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    let mut app = TuiApp::new();
+    app.unsaved = true;
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|f| app.render(f)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let output: String = buffer.content().iter().map(|c| c.symbol()).collect();
+    assert!(
+        output.contains("exclamation"),
+        "unsaved indicator missing when unsaved=true"
+    );
+
+    app.unsaved = false;
+    let backend2 = TestBackend::new(80, 24);
+    let mut terminal2 = Terminal::new(backend2).unwrap();
+    terminal2.draw(|f| app.render(f)).unwrap();
+    let buffer2 = terminal2.backend().buffer();
+    let output2: String = buffer2.content().iter().map(|c| c.symbol()).collect();
+    assert!(
+        output2.contains("nf-fa-check"),
+        "saved indicator missing when unsaved=false"
+    );
+}
+
+#[test]
+fn test_settings_toggle_visibility() {
+    use crossterm::event::KeyCode;
+    use figby::tui::TuiApp;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    let mut app = TuiApp::new();
+    app.handle_key_event(KeyCode::Char('S'));
+    assert!(app.settings.settings_open, "settings should open on S");
+
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|f| app.render(f)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let output: String = buffer.content().iter().map(|c| c.symbol()).collect();
+    assert!(output.contains("Settings"), "settings panel title missing");
+
+    app.handle_key_event(KeyCode::Char('S'));
+    assert!(!app.settings.settings_open, "settings should close on S");
+}
+
+#[test]
+fn test_settings_changes_canvas_width() {
+    use crossterm::event::KeyCode;
+    use figby::tui::TuiApp;
+
+    let mut app = TuiApp::new();
+    assert_eq!(app.canvas.buffer.width(), 40);
+    app.handle_key_event(KeyCode::Char('S'));
+    assert!(app.settings.settings_open);
+    app.handle_key_event(KeyCode::Right);
+    assert_eq!(
+        app.canvas.buffer.width(),
+        41,
+        "canvas width should increase"
+    );
+}
+
+#[test]
+fn test_settings_toggle_grid() {
+    use crossterm::event::KeyCode;
+    use figby::tui::TuiApp;
+
+    let mut app = TuiApp::new();
+    app.handle_key_event(KeyCode::Char('S'));
+    for _ in 0..3 {
+        app.handle_key_event(KeyCode::Down);
+    }
+    app.handle_key_event(KeyCode::Enter);
+    assert!(app.canvas.show_grid(), "grid should be toggled on");
+}
+
+#[test]
+fn test_settings_toggle_snap_to_grid() {
+    use crossterm::event::KeyCode;
+    use figby::tui::TuiApp;
+
+    let mut app = TuiApp::new();
+    assert!(!app.settings.snap_to_grid);
+    app.handle_key_event(KeyCode::Char('S'));
+    for _ in 0..4 {
+        app.handle_key_event(KeyCode::Down);
+    }
+    app.handle_key_event(KeyCode::Enter);
+    assert!(
+        app.settings.snap_to_grid,
+        "snap-to-grid should be toggled on"
+    );
+}
