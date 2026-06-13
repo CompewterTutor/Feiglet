@@ -657,3 +657,18 @@ Created `figby-rs/src/tui/palette.rs` — color palette sidebar widget:
 - `push_recent()` — deduplicates and rotates recent colors, capped at 8
 - Registered as `palette` module in `tui/mod.rs`, added `palette: Palette` field to `TuiApp`
 - 8 integration tests in `tests/tui.rs`: default target, FG/BG toggle, selection, recent push, hex apply, apply to cell (fg/bg), render labels
+
+### 2.3.5 — Brush selection
+
+Created `figby-rs/src/tui/brush.rs` — brush shape picker and size controls:
+- `BrushShape` enum: Square, Circle, SprayPaint, Custom with `cycle()` method
+- `BrushState` struct: `shape: BrushShape`, `size: u8` (1..=20, clamped), `set_size()`,
+  `size_up()`, `size_down()`, `cycle_shape()`
+- `render_preview(max_size)` returns `Vec<String>` showing brush tip at current size
+- `render()` ratatui widget: shows shape name, size, and preview in toolbox column
+- Integrated into `TuiApp`: `brush` field, key events (`[` size down, `]` size up,
+  `'` cycle shape), preview rendered below toolbox
+- Status bar updated to show current brush shape and size
+- No `.unwrap()` in production — all paths use proper Option/clamp arithmetic
+- SprayPaint uses fixed seed 42 for deterministic output across test runs
+- fmt and clippy pass clean
