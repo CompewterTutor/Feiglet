@@ -5,7 +5,7 @@ use crossterm::terminal::{
 };
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
+use ratatui::widgets::{Block, Borders, Tabs};
 use ratatui::Frame;
 use std::collections::BTreeMap;
 use std::io;
@@ -14,10 +14,12 @@ use std::time::Duration;
 pub mod brush;
 pub mod canvas;
 pub mod palette;
+pub mod status;
 pub mod toolbox;
 
 pub use brush::BrushState;
 pub use palette::Palette;
+pub use status::CanvasSettings;
 pub use toolbox::Tool;
 
 const ICONS_YAML: &str = include_str!("../../../assets/tui/icons.yaml");
@@ -55,6 +57,8 @@ pub struct TuiApp {
     pub canvas: canvas::CanvasWidget,
     pub palette: palette::Palette,
     pub brush: brush::BrushState,
+    pub unsaved: bool,
+    pub settings: status::CanvasSettings,
     last_canvas_size: (u16, u16),
 }
 
@@ -70,6 +74,8 @@ impl TuiApp {
             palette: palette::Palette::new(),
             brush: brush::BrushState::new(),
             last_canvas_size: (0, 0),
+            unsaved: false,
+            settings: status::CanvasSettings::new(),
         }
     }
 
@@ -100,7 +106,7 @@ impl TuiApp {
             .constraints([
                 Constraint::Length(3),
                 Constraint::Min(0),
-                Constraint::Length(1),
+                Constraint::Length(3),
             ])
             .split(frame.area());
 
@@ -145,21 +151,27 @@ impl TuiApp {
         frame.render_widget(block, main_chunks[1]);
         frame.render_widget(&self.canvas, inner);
 
-        self.palette.render(frame, main_chunks[2]);
+        if self.settings.settings_open {
+            self.settings.render(frame, main_chunks[2]);
+        } else {
+            self.palette.render(frame, main_chunks[2]);
+        }
 
         let mode_name = match self.mode {
             AppMode::FontEditor => "Font Editor",
             AppMode::ImageEditor => "Image Editor",
             AppMode::AsciiPreview => "ASCII Preview",
         };
-        let status = Paragraph::new(format!(
-            " {} | Brush: {} (sz:{}) | [Tab] Mode | [q] Quit | ['] Shape | [[] Size- | []] Size+",
+        status::StatusBar::render(
+            frame,
+            chunks[2],
+            self.canvas.cursor(),
+            self.canvas.zoom_level(),
+            self.toolbox.selected.full_name(),
             mode_name,
-            self.brush.shape.name(),
-            self.brush.size,
-        ))
-        .block(Block::default().borders(Borders::ALL));
-        frame.render_widget(status, chunks[2]);
+            self.unsaved,
+            &self._icons,
+        );
     }
 
     pub fn handle_event(&mut self) -> io::Result<()> {
@@ -174,6 +186,17 @@ impl TuiApp {
     }
 
     pub fn handle_key_event(&mut self, code: KeyCode) {
+        if self.settings.settings_open {
+            if self.settings.handle_key(code) {
+                self.apply_settings();
+                return;
+            }
+            if let KeyCode::Char('S') = code {
+                self.settings.settings_open = false;
+            }
+            return;
+        }
+
         if self
             .canvas
             .handle_key(code, self.last_canvas_size.0, self.last_canvas_size.1)
@@ -208,7 +231,24 @@ impl TuiApp {
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.should_quit = true;
             }
+            KeyCode::Char('S') => {
+                self.settings.canvas_width = self.canvas.buffer.width() as u16;
+                self.settings.canvas_height = self.canvas.buffer.height() as u16;
+                self.settings.show_grid = self.canvas.show_grid();
+                self.settings.settings_open = true;
+            }
             _ => {}
+        }
+    }
+
+    fn apply_settings(&mut self) {
+        let w = self.settings.canvas_width as usize;
+        let h = self.settings.canvas_height as usize;
+        if self.canvas.buffer.width() != w || self.canvas.buffer.height() != h {
+            self.canvas = canvas::CanvasWidget::new(w as u16, h as u16);
+        }
+        if self.settings.show_grid != self.canvas.show_grid() {
+            self.canvas.toggle_grid();
         }
     }
 }

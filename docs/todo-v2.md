@@ -272,7 +272,7 @@ overlay, layers, and animation timeline.
   - **Tests:** Brush shape + size tests.
   - **Difficulty:** Low
 
-- [ ] `2.3.6` Status bar + canvas settings
+- [x] `2.3.6` Status bar + canvas settings
   - **Goal:** Status bar: cursor position (X,Y), zoom level, current
     tool name, mode, unsaved indicator. Settings panel: canvas width ×
     height, font size, grid toggle, snap-to-grid.

@@ -488,3 +488,17 @@ Three bugs found in phase merge review:
 - `(x - area.x) % zoom == 0` triggers `clippy::manual_is_multiple_of` in Rust 1.95 — use `.is_multiple_of(zoom)` instead. Method is safe only when `zoom > 0` (invariant holds for CanvasWidget where zoom ∈ [1,8]).
 - Canvas keys (`+`, `-`, arrows, `G`) placed before toolbox keys in dispatch order prevents `g`-for-Fill conflict since canvas only intercepts uppercase `G`. Lowercase `g` still reaches toolbox for Fill tool.
 
+## 2.3.6 — Status bar + canvas settings
+
+- `Constraint::Length(1)` with `Block::default().borders(Borders::ALL)` yields 0 rows
+  of content area — the text is effectively invisible. Changed to `Length(3)` for
+  a usable 1-line content area between top/bottom borders. Without this change,
+  status bar text never appears in the rendered buffer.
+- Settings mode must intercept keys BEFORE canvas handler, since arrow keys are
+  used for both canvas cursor movement and settings field navigation. A mode check
+  at the top of `handle_key_event()` ensures settings captures ↑/↓/←/→/Enter/Esc
+  before any other handler.
+- `CanvasSettings` syncs values to canvas on every key event (dimensions → recreate
+  widget, grid → toggle). This reactive approach ensures settings panel and canvas
+  stay in sync without a separate "apply" step.
+
