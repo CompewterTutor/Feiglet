@@ -201,7 +201,23 @@ overlay, layers, and animation timeline.
   - **Tests:** Generate font, load it, render known text. Compare with C.
   - **Difficulty:** Low
 
-- [ ] `2.2.5` Phase merge: release/2.2 → main
+- [ ] `2.2.5` Create TUI iconset YAML file
+  - **Goal:** Create `assets/tui/icons.yaml` — plain YAML mapping every UI
+    element (tools, panels, modes, buttons, menus) from the todo spec to
+    Nerd Font icon names. Covers: tool icons, mode tabs, cursor states,
+    brush shapes, color palette controls, status indicators, file ops,
+    edit actions, font editor panels, smushing rule toggles, font
+    transforms, image adjustments, text tool controls, layer operations,
+    blend modes, timeline controls, keyframe tools, export options,
+    settings, navigation, dialog buttons, and misc UI widgets (checkboxes,
+    toggles, scrollbars).
+  - **Touches:** `assets/tui/icons.yaml`
+  - **Success:** File contains all 120+ elements with valid Nerd Font
+    icon names. Each `nf-*` name maps to a real Nerd Font glyph.
+  - **Tests:** Verify YAML parse + all keys present.
+  - **Difficulty:** Low
+
+- [ ] `2.2.6` Phase merge: release/2.2 → main
   - **Difficulty:** Low
 
 ---
