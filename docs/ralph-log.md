@@ -314,3 +314,11 @@ DONE: 2.2.4 merged into release/2.2.
 ## 2026-06-13 12:41
 
 DONE: 2.2.5 merged into release/2.2.
+
+## 2026-06-13 12:48
+
+DONE: 2.2.6 merged into release/2.2.
+
+## 2026-06-13 12:48
+
+All 2.2 tasks complete. Starting phase review.

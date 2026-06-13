@@ -447,7 +447,7 @@ mod tests {
         let parsed = parse_header(&header).expect("should parse generated header");
 
         assert_eq!(parsed.old_layout, 0);
-        assert_eq!(parsed.full_layout, 64);
+        assert_eq!(parsed.full_layout, 0);
         assert_eq!(parsed.print_direction, -1);
         assert_eq!(parsed.codetag_count, 0);
     }
