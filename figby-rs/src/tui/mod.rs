@@ -11,10 +11,12 @@ use std::collections::BTreeMap;
 use std::io;
 use std::time::Duration;
 
+pub mod brush;
 pub mod canvas;
 pub mod palette;
 pub mod toolbox;
 
+pub use brush::BrushState;
 pub use palette::Palette;
 pub use toolbox::Tool;
 
@@ -52,6 +54,7 @@ pub struct TuiApp {
     pub toolbox: toolbox::Toolbox,
     pub canvas: canvas::CanvasWidget,
     pub palette: palette::Palette,
+    pub brush: brush::BrushState,
     last_canvas_size: (u16, u16),
 }
 
@@ -65,6 +68,7 @@ impl TuiApp {
             toolbox: toolbox::Toolbox::new(),
             canvas: canvas::CanvasWidget::default(),
             palette: palette::Palette::new(),
+            brush: brush::BrushState::new(),
             last_canvas_size: (0, 0),
         }
     }
@@ -125,7 +129,12 @@ impl TuiApp {
             ])
             .split(chunks[1]);
 
-        self.toolbox.render(frame, main_chunks[0]);
+        let tool_brush_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(10), Constraint::Length(9)])
+            .split(main_chunks[0]);
+        self.toolbox.render(frame, tool_brush_chunks[0]);
+        self.brush.render(frame, tool_brush_chunks[1]);
 
         let block = Block::default()
             .title(self.mode.title())
@@ -143,8 +152,13 @@ impl TuiApp {
             AppMode::ImageEditor => "Image Editor",
             AppMode::AsciiPreview => "ASCII Preview",
         };
-        let status = Paragraph::new(format!(" Mode: {} | [Tab] Switch | [q] Quit", mode_name))
-            .block(Block::default().borders(Borders::ALL));
+        let status = Paragraph::new(format!(
+            " {} | Brush: {} (sz:{}) | [Tab] Mode | [q] Quit | ['] Shape | [[] Size- | []] Size+",
+            mode_name,
+            self.brush.shape.name(),
+            self.brush.size,
+        ))
+        .block(Block::default().borders(Borders::ALL));
         frame.render_widget(status, chunks[2]);
     }
 
@@ -168,6 +182,21 @@ impl TuiApp {
         }
         if self.toolbox.handle_key(code) {
             return;
+        }
+        match code {
+            KeyCode::Char('[') => {
+                self.brush.size_down();
+                return;
+            }
+            KeyCode::Char(']') => {
+                self.brush.size_up();
+                return;
+            }
+            KeyCode::Char('\'') => {
+                self.brush.cycle_shape();
+                return;
+            }
+            _ => {}
         }
         if self.palette.handle_key(code) {
             return;

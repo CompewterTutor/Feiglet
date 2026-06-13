@@ -49,7 +49,7 @@ fn test_tui_smoke_all_panels_render() {
         "toolbar missing ASCII Preview tab"
     );
     assert!(output.contains("Palette"), "palette sidebar missing");
-    assert!(output.contains("Mode:"), "status bar missing");
+    assert!(output.contains("Mode"), "status bar missing");
 }
 
 #[test]
@@ -428,6 +428,157 @@ fn test_palette_apply_to_cell_bg() {
     palette.apply_to_cell(&mut cell);
     assert_eq!(cell.fg, None);
     assert_eq!(cell.bg, Some(ANSI_16_COLORS[4]));
+}
+
+#[test]
+fn test_brush_default_shape() {
+    use figby::tui::brush::BrushShape;
+    use figby::tui::BrushState;
+    let brush = BrushState::new();
+    assert_eq!(brush.shape, BrushShape::Square);
+}
+
+#[test]
+fn test_brush_default_size() {
+    use figby::tui::BrushState;
+    let brush = BrushState::new();
+    assert_eq!(brush.size, 3);
+}
+
+#[test]
+fn test_brush_cycle_shape() {
+    use figby::tui::brush::BrushShape;
+    use figby::tui::BrushState;
+    let mut brush = BrushState::new();
+    assert_eq!(brush.shape, BrushShape::Square);
+    brush.cycle_shape();
+    assert_eq!(brush.shape, BrushShape::Circle);
+    brush.cycle_shape();
+    assert_eq!(brush.shape, BrushShape::SprayPaint);
+    brush.cycle_shape();
+    assert_eq!(brush.shape, BrushShape::Custom);
+    brush.cycle_shape();
+    assert_eq!(brush.shape, BrushShape::Square);
+}
+
+#[test]
+fn test_brush_size_up_down_key() {
+    use crossterm::event::KeyCode;
+    use figby::tui::TuiApp;
+
+    let mut app = TuiApp::new();
+    assert_eq!(app.brush.size, 3);
+
+    app.handle_key_event(KeyCode::Char(']'));
+    assert_eq!(app.brush.size, 4);
+
+    app.handle_key_event(KeyCode::Char('['));
+    assert_eq!(app.brush.size, 3);
+}
+
+#[test]
+fn test_brush_shape_cycle_key() {
+    use crossterm::event::KeyCode;
+    use figby::tui::brush::BrushShape;
+    use figby::tui::TuiApp;
+
+    let mut app = TuiApp::new();
+    assert_eq!(app.brush.shape, BrushShape::Square);
+
+    app.handle_key_event(KeyCode::Char('\''));
+    assert_eq!(app.brush.shape, BrushShape::Circle);
+
+    app.handle_key_event(KeyCode::Char('\''));
+    assert_eq!(app.brush.shape, BrushShape::SprayPaint);
+}
+
+#[test]
+fn test_brush_preview_square_integration() {
+    use figby::tui::BrushState;
+
+    let brush = BrushState {
+        shape: figby::tui::brush::BrushShape::Square,
+        size: 3,
+    };
+    let preview = brush.render_preview(10);
+    assert_eq!(preview.len(), 3);
+    for row in &preview {
+        assert_eq!(row.chars().filter(|&c| c == '@').count(), 3);
+    }
+}
+
+#[test]
+fn test_brush_preview_circle_integration() {
+    use figby::tui::brush::BrushShape;
+    use figby::tui::BrushState;
+
+    let brush = BrushState {
+        shape: BrushShape::Circle,
+        size: 5,
+    };
+    let preview = brush.render_preview(10);
+    assert_eq!(preview.len(), 5);
+    for row in &preview {
+        assert_eq!(row.len(), 5);
+    }
+}
+
+#[test]
+fn test_brush_preview_spray_deterministic() {
+    use figby::tui::brush::BrushShape;
+    use figby::tui::BrushState;
+
+    let a = BrushState {
+        shape: BrushShape::SprayPaint,
+        size: 7,
+    };
+    let b = BrushState {
+        shape: BrushShape::SprayPaint,
+        size: 7,
+    };
+    assert_eq!(a.render_preview(10), b.render_preview(10));
+}
+
+#[test]
+fn test_brush_preview_custom_center() {
+    use figby::tui::brush::BrushShape;
+    use figby::tui::BrushState;
+
+    let brush = BrushState {
+        shape: BrushShape::Custom,
+        size: 5,
+    };
+    let preview = brush.render_preview(10);
+    assert_eq!(preview[2].as_bytes()[2] as char, '+');
+}
+
+#[test]
+fn test_brush_preview_respects_max_size() {
+    use figby::tui::BrushState;
+
+    let mut brush = BrushState::new();
+    brush.set_size(15);
+    let preview = brush.render_preview(5);
+    assert_eq!(preview.len(), 5);
+    for row in &preview {
+        assert_eq!(row.len(), 5);
+    }
+}
+
+#[test]
+fn test_brush_render_contains_shape_name() {
+    use figby::tui::TuiApp;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    let mut app = TuiApp::new();
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|f| app.render(f)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let output: String = buffer.content().iter().map(|c| c.symbol()).collect();
+    assert!(output.contains("Brush"), "brush panel missing");
+    assert!(output.contains("Square"), "brush shape name missing");
 }
 
 #[test]
