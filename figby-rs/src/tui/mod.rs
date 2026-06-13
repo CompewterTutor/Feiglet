@@ -6,7 +6,6 @@ use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use std::io::Write;
 use rand::rngs::StdRng;
 use rand::Rng;
 use rand::SeedableRng;
@@ -113,10 +112,6 @@ impl TuiApp {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-        // Disable any-event tracking (?1003h) — we only need click (?1000h)
-        // and drag (?1002h). Motion events flood the queue and delay clicks.
-        write!(stdout, "\x1b[?1003l")?;
-        stdout.flush()?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
@@ -438,6 +433,11 @@ impl TuiApp {
                 self.line_start = None;
                 self.saved_buffer = None;
             }
+            MouseEventKind::Moved => {
+                if let Some((bx, by)) = self.screen_to_buffer(mouse.column, mouse.row) {
+                    self.canvas.set_cursor(bx.max(0) as u16, by.max(0) as u16);
+                }
+            }
             _ => {}
         }
     }
@@ -534,14 +534,19 @@ impl TuiApp {
 
     pub fn handle_event(&mut self) -> io::Result<()> {
         if event::poll(Duration::from_millis(100))? {
-            match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    self.handle_key_event(key);
+            loop {
+                match event::read()? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => {
+                        self.handle_key_event(key);
+                    }
+                    Event::Mouse(mouse) => {
+                        self.handle_mouse_event(mouse);
+                    }
+                    _ => {}
                 }
-                Event::Mouse(mouse) => {
-                    self.handle_mouse_event(mouse);
+                if !event::poll(Duration::ZERO)? {
+                    break;
                 }
-                _ => {}
             }
         }
         Ok(())
