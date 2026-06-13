@@ -12,8 +12,10 @@ use std::io;
 use std::time::Duration;
 
 pub mod canvas;
+pub mod palette;
 pub mod toolbox;
 
+pub use palette::Palette;
 pub use toolbox::Tool;
 
 const ICONS_YAML: &str = include_str!("../../../assets/tui/icons.yaml");
@@ -49,6 +51,7 @@ pub struct TuiApp {
     _icons: BTreeMap<String, String>,
     pub toolbox: toolbox::Toolbox,
     pub canvas: canvas::CanvasWidget,
+    pub palette: palette::Palette,
     last_canvas_size: (u16, u16),
 }
 
@@ -61,6 +64,7 @@ impl TuiApp {
             _icons: icons,
             toolbox: toolbox::Toolbox::new(),
             canvas: canvas::CanvasWidget::default(),
+            palette: palette::Palette::new(),
             last_canvas_size: (0, 0),
         }
     }
@@ -132,8 +136,7 @@ impl TuiApp {
         frame.render_widget(block, main_chunks[1]);
         frame.render_widget(&self.canvas, inner);
 
-        let palette = Block::default().title(" Palette ").borders(Borders::ALL);
-        frame.render_widget(palette, main_chunks[2]);
+        self.palette.render(frame, main_chunks[2]);
 
         let mode_name = match self.mode {
             AppMode::FontEditor => "Font Editor",
@@ -164,6 +167,9 @@ impl TuiApp {
             return;
         }
         if self.toolbox.handle_key(code) {
+            return;
+        }
+        if self.palette.handle_key(code) {
             return;
         }
         match code {
