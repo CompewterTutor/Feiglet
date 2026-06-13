@@ -83,16 +83,16 @@ Fixed 6 failing unit tests in `template.rs`:
 4. **`test_fill_shadow_offset`**: Asserted `canvas[3][3] == '.'` but shadow rect is a single
    cell at (row=3, col=4) — col 3 is outside shadow. Fixed assertion to expect `' '`.
 
-### 2.0.x — README header template
+### 2.0.x — README header template (redesign + defer)
 
-Created `assets/templates/figby-30w.ftmp` — `.ftmp` template that renders the README header:
-- figby image (30px wide, colored via rascii_art BLOCK charset) on the left
-- "Figby" text in DOS Rebel font (`fonts/dosrebel.flf`, x=32) to the right
-- Version "2.0.10" in standard font, right-aligned, near bottom
-
-Output saved to `assets/templates/figby-30w.ftm`.
-
-**Known limitation:** Colored image output embeds ANSI escape codes per-character.
-The `Vec<Vec<char>>` canvas grid treats escape sequences as content characters,
-corrupting layout. Fix deferred — color mode works for terminal display but not
-for grid-based placement.
+After review:
+- Template format redesigned: YAML frontmatter (not TOML), typed elements in
+  `canvas.ftmp-elements`, body just `{{name}}` placeholders. Reference format
+  in `assets/templates/figby-cli-h1.ftmp`.
+- Image tag: `{{img:name}}` not `{{img:source:width:height:...}}` — all metadata
+  in frontmatter under element's YAML block.
+- **Implementation deferred.** The template system will be rewritten when TUI
+  infrastructure lands (Phase 2.3+ ratatui), which provides a proper canvas
+  widget with per-cell color metadata. Current TOML-based parser is too
+  restrictive and can't handle ANSI color in the text grid.
+- Template file saved as reference design: `assets/templates/figby-30w.ftmp`.

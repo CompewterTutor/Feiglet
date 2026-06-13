@@ -347,4 +347,10 @@ Three bugs found in phase merge review:
   These cannot be stored in a `Vec<Vec<char>>` grid — escape sequences occupy
   multiple cells. Color rendering in templates requires a richer canvas type
   that stores per-cell color metadata.
+- Template format should use YAML frontmatter (not TOML) with typed elements.
+  Reference: `assets/templates/figby-cli-h1.ftmp`. TOML limitations block
+  multi-font fallback arrays and complex nested metadata.
+- Template rendering deferred to Phase 2.3+ (TUI/ratatui canvas widget). Current
+  `parse_ftmp`/`render_template` is a prototype; ratatui `Paragraph`/`Canvas`
+  widgets can handle styled text natively without the ANSI-in-grid problem.
 
