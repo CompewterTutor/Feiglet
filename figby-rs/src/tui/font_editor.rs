@@ -842,8 +842,7 @@ impl FontEditor {
                 }
                 _ => false,
             }
-        } else if self.transform_submode.is_some() {
-            let current = self.transform_submode.unwrap();
+        } else if let Some(current) = self.transform_submode {
             match code {
                 KeyCode::Up => {
                     self.transform_submode = Some(current.prev());
