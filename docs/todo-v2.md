@@ -322,7 +322,7 @@ overlay, layers, and animation timeline.
   - **Tests:** Fill on bounded and unbounded regions.
   - **Difficulty:** Medium
 
-- [ ] `2.4.5` Selection tools: marquee, lasso, circle, polygon
+- [x] `2.4.5` Selection tools: marquee, lasso, circle, polygon
   - **Goal:** Marquee: click-drag rectangle selection. Lasso: freehand
     selection. Circle: click-drag center-to-edge. Polygon: click points,
     enter to close. Dashed border overlay. Selection can be moved, copied,
