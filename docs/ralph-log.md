@@ -260,3 +260,19 @@ PHASE_COMPLETE: 1.7 merged to main after review approval.
 ## 2026-06-13 06:42
 
 DONE: 1.7.2 merged into release/1.7.
+
+## 2026-06-13 06:55
+
+DONE: 2.1.1 merged into release/2.1.
+
+## 2026-06-13 07:00
+
+DONE: 2.1.2 merged into release/2.1.
+
+## 2026-06-13 07:05
+
+DONE: 2.1.3 merged into release/2.1.
+
+## 2026-06-13 07:11
+
+DONE: 2.1.4 merged into release/2.1.

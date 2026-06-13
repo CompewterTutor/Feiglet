@@ -465,3 +465,66 @@ implemented, tested, merged. Phase 2.1 (Image-to-ASCII Pipeline) is next.
 Second merge (this commit) brings 3 post-initial-merge commits from `release/2.0`:
 fix broken template tests, redesign `.ftmp` format (YAML frontmatter, defer to TUI),
 add `assets/tui/icons.yaml` for Phase 2.2, renumber 2.2.5→2.2.6.
+
+### 2.1.2 — Luminance-to-ASCII character mapping
+
+Added ASCII art conversion pipeline in `image_input.rs`:
+- `DEFAULT_CHAR_MAP` constant (` .-:=+*#%@`) — darkest to brightest
+- `luminance_to_ascii()` — converts luminance matrix to ASCII string with
+  bilinear resize to target width, auto aspect-ratio correction (0.5× height
+  for terminal char ~2:1 aspect), and configurable char map
+- `image_to_ascii()` — convenience wrapper: loads image, converts to ASCII,
+  defaults to terminal width (80 fallback) and default char map
+- `bilinear_resize()` (private) — bilinear interpolation for arbitrary
+  width/height scaling
+- `luminance_to_char()` (private) — maps u8 luminance to char via linear
+  index into char_map: `idx = luminance * (len - 1) / 255`
+- 22 new tests: luminance→char mapping (black/white/mid/custom/empty/single),
+  bilinear resize (identity/upscale/downscale/empty/single-pixel), ASCII
+  output (all-white/all-black/custom-map/empty/zero-width), image→ASCII
+  integration (PNG/custom-map/width/nonexistent/temp-image)
+
+No `.unwrap()` in production — all fallible paths return `Result` or handle
+edge cases with early returns. Terminal width detection falls back to 80.
+
+### 2.1.3 — Colored ASCII output (24-bit ANSI)
+
+Added 24-bit ANSI color support in `image_input.rs`:
+- `RgbPixel` type alias `(u8, u8, u8)` for RGB triples
+- `load_rgb_matrix()` / `rgb_from_dynamic()` — load image preserving original color via `to_rgba8()`
+- `apply_grayscale()` — in-place BT.709 luminance conversion on RGB matrix
+- `apply_negative()` — in-place invert: `(255-r, 255-g, 255-b)`
+- `bilinear_resize_rgb()` — bilinear interpolation on `&[Vec<RgbPixel>]`
+- `ansi_color_code(r, g, b)` — returns `"\x1b[38;2;{r};{g};{b}m"`
+- `ansi_reset_code()` — returns `"\x1b[0m"`
+- `ImageColorConfig` struct — `colored`, `grayscale`, `negative`, `char_map`, `target_width`
+- `color_matrix_to_ascii()` — resizes, applies transforms, wraps chars in ANSI codes
+- `image_to_colored_ascii()` — convenience wrapper loading image with config
+- 10 new tests: RGB load, pixel preservation, grayscale in-place, negative in-place,
+  ANSI format, reset code, colored output, grayscale flag, negative flag, bilinear resize RGB
+
+No `.unwrap()` in production — all fallible paths return `Result`.
+fmt and clippy pass clean.
+
+### 2.1.4 — Braille art + dithering
+
+Added braille art pipeline in `image_input.rs`:
+- `BRAILLE_BASE` constant (U+2800) — Unicode braille starting codepoint
+- `pixels_to_braille_char()` — maps 2×4 pixel block to single braille char via 8-dot bit ordering
+- `floyd_steinberg_dither()` — error diffusion dithering with 7/16, 3/16, 5/16, 1/16 fractions
+- `luminance_to_braille()` — converts luminance matrix to braille string, with optional dithering
+- `image_to_braille()` — convenience wrapper: load image → grayscale → braille
+- 10 new tests: all-blank, all-filled, each dot individually, multiple blocks, partial/odd-sized, empty, dither binary output, no-dither vs dither output, file integration
+
+`.expect()` in `pixels_to_braille_char` for `char::from_u32` is a safe invariant (bits=0..255, base=0x2800, code always in valid Unicode range), following existing codebase convention.
+fmt and clippy pass clean.
+
+### 2.1.5 — Image CLI flags integration
+
+Added `ImageOptions` struct, image CLI flags (`--image`/`-i`, `--map`, `--braille`/`-b`,
+`--color`, `--grayscale`, `--negative`, `--dither`, `--width`, `--height`, `--dimensions`,
+`--flipX`, `--flipY`), image mode dispatch, and `run_image()` entry point to `main.rs`.
+Flip helpers for luminance and RGB matrices reside in `main.rs` (private functions).
+17 flag parse tests + 2 integration tests covering every flag, defaults, short aliases,
+multiple paths, and mode detection. No `.unwrap()` in production — all error paths use
+`match`/`continue`. fmt and clippy pass clean.

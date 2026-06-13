@@ -120,15 +120,15 @@ overlay, layers, and animation timeline.
 
 ## Phase 2.1 — Image-to-ASCII Pipeline
 
-- [ ] `2.1.1` Image loading + grayscale conversion via `rascii_art`
+- [x] `2.1.1` Image loading + grayscale conversion via `rascii_art`
   - **Goal:** Add `rascii_art` dep. Load JPEG, PNG, BMP, WEBP. Convert to
     grayscale luminance matrix.
-  - **Touches:** `figby-rs/Cargo.toml`, `figby-rs/src/image_input.rs`
+  - **Touches:** `figby-rs/Cargo.toml`, `figby-rs/src/lib.rs`, `figby-rs/src/image_input.rs`
   - **Success:** Image loads, pixels normalized to 0-255 luminance.
   - **Tests:** Load each supported format. Verify luminance values.
   - **Difficulty:** Medium
 
-- [ ] `2.1.2` Luminance-to-ASCII character mapping
+- [x] `2.1.2` Luminance-to-ASCII character mapping
   - **Goal:** Map grayscale pixel grid to ASCII char grid. Configurable char
     map (default: ` .-:=+*#%@`). Bilinear resize to fit terminal width.
   - **Touches:** `figby-rs/src/image_input.rs`
@@ -136,7 +136,7 @@ overlay, layers, and animation timeline.
   - **Tests:** Known-image→expected-ASCII output tests.
   - **Difficulty:** Medium
 
-- [ ] `2.1.3` Colored ASCII output (24-bit ANSI)
+- [x] `2.1.3` Colored ASCII output (24-bit ANSI)
   - **Goal:** 24-bit ANSI escape codes per char preserving original pixel
     color. Grayscale flag. Negative invert.
   - **Touches:** `figby-rs/src/image_input.rs`
@@ -144,7 +144,7 @@ overlay, layers, and animation timeline.
   - **Tests:** Color output escape code correctness.
   - **Difficulty:** Medium
 
-- [ ] `2.1.4` Braille art + dithering
+- [x] `2.1.4` Braille art + dithering
   - **Goal:** Map 2×4 pixel blocks to Unicode braille (U+2800–U+28FF).
     Threshold + optional Floyd-Steinberg dithering.
   - **Touches:** `figby-rs/src/image_input.rs`
@@ -152,7 +152,7 @@ overlay, layers, and animation timeline.
   - **Tests:** Known braille patterns match expected.
   - **Difficulty:** Medium
 
-- [ ] `2.1.5` Image CLI flags integration
+- [x] `2.1.5` Image CLI flags integration
   - **Goal:** `--image`/`-i`, `--map`, `--braille`/`-b`, `--color`/`--grayscale`/`--negative`,
     `--dither`, `--width`/`--height`/`--dimensions`, `--flipX`/`--flipY`.
     Multiple paths + URLs. Coexists with FIGlet mode.
