@@ -6,6 +6,7 @@ use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
+use std::io::Write;
 use rand::rngs::StdRng;
 use rand::Rng;
 use rand::SeedableRng;
@@ -112,6 +113,10 @@ impl TuiApp {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        // Disable any-event tracking (?1003h) — we only need click (?1000h)
+        // and drag (?1002h). Motion events flood the queue and delay clicks.
+        write!(stdout, "\x1b[?1003l")?;
+        stdout.flush()?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
