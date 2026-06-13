@@ -1,0 +1,44 @@
+---
+# Example Template for Figby Header
+name: Figby Header # This is so that other templates can import by name
+canvas:
+  width 80
+  padding: 1
+  border: none
+  margin: auto
+  ftmp-elements:
+    figby-h1:
+      type: figtxt
+      text: 'Figby'
+      font: 
+        "dosrebel"
+        "standard" # fallback font (default is standard)
+      jusfify: block
+      align: left
+      v-align: middle
+      layer_mode: multiply
+      outline: 
+        width: 1
+        color: white
+      shadow:
+        depth: 2
+        color: dark-gray
+        direction: sw
+      z-index: 2
+    figby-img:
+      type: rascii_img
+      char_set: default
+      width: 30
+      v-align: middle
+      color: true
+      path: assets/img/figby.png
+      coords: [x,y]
+      z-index: 1
+    figby-version:
+      type: txt
+      text: "Version:$REPO_VERSION" #BUILT-IN - git plugin builtin will pull latest tag/release and 
+      align: right
+
+---
+{{figby-image}}{{figby-h1}}
+{{figby-version}}

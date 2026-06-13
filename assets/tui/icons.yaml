@@ -1,0 +1,250 @@
+# Figby TUI Iconset — Nerd Font icon names
+# Maps every UI element from the todo spec to a Nerd Font glyph.
+# Loaded at TUI startup; key = element id, value = nf icon name.
+
+# ── Modes ──────────────────────────────────────────
+mode_font_editor: nf-fa-font
+mode_image_editor: nf-fa-picture_o
+mode_ascii_preview: nf-fa-terminal
+
+# ── Tools ──────────────────────────────────────────
+tool_brush: nf-fa-paint_brush
+tool_eraser: nf-fae-eraser
+tool_line: nf-md-vector_line
+tool_fill: nf-fa-paint_bucket
+tool_flood_fill: nf-fa-paint_bucket
+tool_marquee: nf-fa-arrows
+tool_lasso: nf-fa-crosshairs
+tool_circle: nf-fa-circle_o
+tool_polygon: nf-md-shape-polygon-plus
+tool_eyedropper: nf-fa-eyedropper
+tool_spray: nf-weather-sprinkle
+tool_text: nf-fa-font
+tool_pencil: nf-fa-pencil
+
+# ── Cursor / Selection ─────────────────────────────
+cursor_default: nf-fa-arrows
+cursor_crosshair: nf-fa-crosshairs
+cursor_text: nf-fa-i_cursor
+cursor_move: nf-fa-hand_o_up
+cursor_resize_ns: nf-fa-arrows_v
+cursor_resize_ew: nf-fa-arrows_h
+
+# ── Canvas ─────────────────────────────────────────
+canvas_grid: nf-fa-th
+canvas_zoom_in: nf-fa-search_plus
+canvas_zoom_out: nf-fa-search_minus
+canvas_zoom_reset: nf-fa-search
+canvas_snap_grid: nf-fa-th
+canvas_fullscreen: nf-fa-arrows_alt
+
+# ── Brush ─────────────────────────────────────────
+brush_shape_square: nf-fa-square
+brush_shape_circle: nf-fa-circle
+brush_shape_spray: nf-weather-sprinkle
+brush_shape_custom: nf-fa-pencil
+brush_size_up: nf-fa-plus
+brush_size_down: nf-fa-minus
+
+# ── Color Palette ─────────────────────────────────
+palette_fg: nf-fa-circle
+palette_bg: nf-fa-circle_o
+palette_custom: nf-fa-eyedropper
+palette_swap: nf-fa-exchange
+palette_reset: nf-fa-undo
+palette_recent: nf-fa-clock_o
+palette_grid_16: nf-fa-th_large
+palette_grid_240: nf-fa-th
+
+# ── Status Bar ────────────────────────────────────
+status_position: nf-fa-crosshairs
+status_zoom: nf-fa-search
+status_tool: nf-fa-wrench
+status_mode: nf-fa-cube
+status_modified: nf-fa-circle
+status_unsaved: nf-fa-exclamation_triangle
+status_saved: nf-fa-check
+
+# ── File Operations ───────────────────────────────
+file_new: nf-fa-file_o
+file_open: nf-fa-folder_open_o
+file_save: nf-fa-floppy_o
+file_save_as: nf-fa-floppy
+file_recent: nf-fa-clock_o
+file_export_png: nf-fa-picture_o
+file_export_txt: nf-fa-file_text_o
+file_export_gif: nf-fa-film
+file_import: nf-fa-download
+
+# ── Edit ──────────────────────────────────────────
+edit_undo: nf-fa-undo
+edit_redo: nf-fa-repeat
+edit_cut: nf-fa-scissors
+edit_copy: nf-fa-files_o
+edit_paste: nf-fa-clipboard
+edit_delete: nf-fa-trash
+edit_duplicate: nf-fa-copy
+edit_select_all: nf-fa-arrows
+
+# ── Font Editor ───────────────────────────────────
+font_header: nf-fa-font
+font_height: nf-fa-arrows_v
+font_baseline: nf-fa-minus
+font_max_length: nf-fa-arrows_h
+font_hardblank: nf-fa-hashtag
+font_full_layout: nf-fa-sliders
+font_print_direction: nf-fa-exchange
+font_comment: nf-fa-comment_o
+font_search: nf-fa-search
+font_filter: nf-fa-filter
+
+# ── Smushing Rules ────────────────────────────────
+smush_equal_chars: nf-fa-asterisk
+smush_underscore: nf-fa-minus
+smush_hierarchy: nf-fa-sort
+smush_pair: nf-fa-link
+smush_bigx: nf-fa-close
+smush_hardblank: nf-fa-hashtag
+smush_preview: nf-fa-eye
+
+# ── Font Transforms ──────────────────────────────
+transform_resize: nf-fa-arrows_alt
+transform_italicize: nf-fa-italic
+transform_bold: nf-fa-bold
+transform_mirror: nf-fa-arrows_h
+transform_flip: nf-fa-arrows_v
+transform_rename: nf-fa-tag
+
+# ── Image Editor ──────────────────────────────────
+image_import: nf-fa-picture_o
+image_brightness: nf-fa-sun_o
+image_contrast: nf-fa-adjust
+image_threshold: nf-fa-sliders_h
+image_dither: nf-fa-magic
+image_invert: nf-fa-exchange
+image_grayscale: nf-fa-circle_o
+image_resize: nf-fa-arrows_alt
+image_flip_x: nf-fa-arrows_h
+image_flip_y: nf-fa-arrows_v
+image_reset: nf-fa-undo
+
+# ── Text Tool ─────────────────────────────────────
+text_font_select: nf-fa-font
+text_color: nf-fa-paint_palette
+text_size: nf-fa-text_height
+text_justify_left: nf-fa-align_left
+text_justify_center: nf-fa-align_center
+text_justify_right: nf-fa-align_right
+text_justify_block: nf-fa-align_justify
+text_bold: nf-fa-bold
+text_italic: nf-fa-italic
+text_underline: nf-fa-underline
+text_edit: nf-fa-pencil_square_o
+text_delete: nf-fa-trash
+
+# ── Layers ────────────────────────────────────────
+layer_new: nf-fa-plus
+layer_delete: nf-fa-trash
+layer_duplicate: nf-fa-copy
+layer_merge: nf-fa-compress
+layer_move_up: nf-fa-arrow_up
+layer_move_down: nf-fa-arrow_down
+layer_visibility_on: nf-fa-eye
+layer_visibility_off: nf-fa-eye_slash
+layer_lock: nf-fa-lock
+layer_unlock: nf-fa-unlock_lock
+layer_opacity: nf-fa-adjust
+layer_group: nf-fa-folder
+layer_ungroup: nf-fa-folder_open_o
+layer_mask: nf-fa-eraser
+
+# ── Blending ──────────────────────────────────────
+blend_normal: nf-fa-circle_o
+blend_multiply: nf-fa-close
+blend_overlay: nf-fa-circle
+blend_screen: nf-fa-sun_o
+blend_add: nf-fa-plus
+blend_subtract: nf-fa-minus
+
+# ── Timeline ──────────────────────────────────────
+timeline_frame_add: nf-fa-plus
+timeline_frame_delete: nf-fa-trash
+timeline_frame_duplicate: nf-fa-copy
+timeline_frame_reorder: nf-fa-arrows_v
+timeline_onion_skin: nf-fa-eye
+timeline_play: nf-fa-play
+timeline_stop: nf-fa-stop
+timeline_pause: nf-fa-pause
+timeline_next: nf-fa-step_forward
+timeline_prev: nf-fa-step_backward
+timeline_first: nf-fa-fast_backward
+timeline_last: nf-fa-fast_forward
+timeline_loop: nf-fa-repeat
+timeline_fps: nf-fa-clock_o
+
+# ── Keyframes ─────────────────────────────────────
+keyframe_add: nf-fa-plus_circle
+keyframe_delete: nf-fa-minus_circle
+keyframe_prev: nf-fa-arrow_left
+keyframe_next: nf-fa-arrow_right
+keyframe_tween_linear: nf-fa-arrows_h
+keyframe_tween_ease_in: nf-fa-arrow_right
+keyframe_tween_ease_out: nf-fa-arrow_left
+keyframe_tween_bounce: nf-fa-arrows_v
+keyframe_interpolate: nf-fa-magic
+
+# ── Export ────────────────────────────────────────
+export_png: nf-fa-picture_o
+export_txt: nf-fa-file_text_o
+export_gif: nf-fa-film
+export_flatten: nf-fa-compress
+export_layers_separate: nf-fa-bars
+export_transparent: nf-fa-eraser
+
+# ── Settings / Config ─────────────────────────────
+settings_open: nf-fa-gear
+settings_theme: nf-fa-paint_palette
+settings_font: nf-fa-font
+settings_width: nf-fa-arrows_h
+settings_height: nf-fa-arrows_v
+settings_grid: nf-fa-th
+settings_snap: nf-fa-magnet
+settings_autosave: nf-fa-clock_o
+settings_defaults: nf-fa-undo
+
+# ── Navigation ────────────────────────────────────
+nav_home: nf-fa-home
+nav_back: nf-fa-arrow_left
+nav_forward: nf-fa-arrow_right
+nav_up: nf-fa-arrow_up
+nav_down: nf-fa-arrow_down
+nav_refresh: nf-fa-refresh
+nav_close: nf-fa-close
+
+# ── Dialogs ───────────────────────────────────────
+dialog_confirm: nf-fa-check
+dialog_cancel: nf-fa-close
+dialog_ok: nf-fa-check
+dialog_yes: nf-fa-check_circle
+dialog_no: nf-fa-times_circle
+dialog_info: nf-fa-info_circle
+dialog_warning: nf-fa-exclamation_triangle
+dialog_error: nf-fa-exclamation_circle
+
+# ── Misc UI ──────────────────────────────────────
+menu_hamburger: nf-fa-bars
+menu_context: nf-fa-chevron_down
+menu_dropdown: nf-fa-caret_down
+tab_active: nf-fa-square
+tab_inactive: nf-fa-square_o
+checkbox_on: nf-fa-check_square
+checkbox_off: nf-fa-square_o
+radio_on: nf-fa-dot_circle_o
+radio_off: nf-fa-circle_o
+toggle_on: nf-fa-toggle_on
+toggle_off: nf-fa-toggle_off
+progress_empty: nf-fa-circle_o
+progress_filled: nf-fa-circle
+scrollbar_thumb: nf-fa-circle
+splitter_handle: nf-fa-grip_lines
+resize_handle: nf-fa-arrows_alt
