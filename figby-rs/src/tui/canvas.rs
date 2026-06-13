@@ -74,6 +74,8 @@ pub struct CanvasWidget {
     scroll: (u16, u16),
     zoom: u8,
     show_grid: bool,
+    pub selection_perimeter: Option<Vec<(usize, usize)>>,
+    pub polygon_vertices: Vec<(i16, i16)>,
 }
 
 impl CanvasWidget {
@@ -86,6 +88,8 @@ impl CanvasWidget {
             scroll: (0, 0),
             zoom: 1,
             show_grid: false,
+            selection_perimeter: None,
+            polygon_vertices: Vec::new(),
         }
     }
 
@@ -287,9 +291,68 @@ impl Widget for &CanvasWidget {
             }
         }
 
-        // Cursor highlight (rendered after grid so it's visible on top)
         let vis_w = area.width / zoom;
         let vis_h = area.height / zoom;
+
+        // Polygon vertex preview (rendered before selection overlay)
+        for &(vx, vy) in &self.polygon_vertices {
+            if vx >= sx as i16
+                && vx < (sx + vis_w) as i16
+                && vy >= sy as i16
+                && vy < (sy + vis_h) as i16
+            {
+                let cx = area.x + (vx as u16 - sx) * zoom;
+                let cy = area.y + (vy as u16 - sy) * zoom;
+                for r in cy..(cy + zoom).min(area.y + area.height) {
+                    for c in cx..(cx + zoom).min(area.x + area.width) {
+                        if let Some(cell) = buf.cell_mut((c, r)) {
+                            cell.set_style(
+                                cell.style()
+                                    .fg(ratatui::style::Color::Cyan)
+                                    .add_modifier(Modifier::BOLD),
+                            );
+                            let existing = cell.symbol().chars().next().unwrap_or(' ');
+                            if existing == ' ' {
+                                cell.set_char('+');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Selection perimeter dashed overlay
+        if let Some(ref perim) = self.selection_perimeter {
+            let dash_style = Style::default()
+                .fg(ratatui::style::Color::Cyan)
+                .add_modifier(Modifier::BOLD);
+            let mut sorted: Vec<&(usize, usize)> = perim.iter().collect();
+            sorted.sort_by_key(|(x, y)| x + y * (self.buffer.width() + 1));
+            for (i, &&(bx, by)) in sorted.iter().enumerate() {
+                if bx >= sx as usize
+                    && bx < (sx + vis_w) as usize
+                    && by >= sy as usize
+                    && by < (sy + vis_h) as usize
+                {
+                    // Alternate dash pattern: every other cell gets the dash char
+                    let dash_char = if i % 2 == 0 { '▒' } else { ' ' };
+                    let cx = area.x + (bx as u16 - sx) * zoom;
+                    let cy = area.y + (by as u16 - sy) * zoom;
+                    for r in cy..(cy + zoom).min(area.y + area.height) {
+                        for c in cx..(cx + zoom).min(area.x + area.width) {
+                            if let Some(cell) = buf.cell_mut((c, r)) {
+                                if dash_char != ' ' {
+                                    cell.set_char(dash_char);
+                                }
+                                cell.set_style(dash_style);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Cursor highlight (rendered after grid so it's visible on top)
         if self.cursor.0 >= sx
             && self.cursor.0 < sx + vis_w
             && self.cursor.1 >= sy

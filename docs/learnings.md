@@ -509,6 +509,28 @@ Three bugs found in phase merge review:
   commands are event-system primitives alongside `EnableBracketedPaste`,
   not terminal-mode commands like `EnterAlternateScreen`.
 
+## 2.4.5 — Selection tools
+
+- `handle_key_event` signature changed from `KeyCode` to `impl Into<KeyEvent>` to
+  support modifier checks (Ctrl+C/X/V). This is backward-compatible: all existing
+  callers passing `KeyCode` continue to work via crossterm's `From<KeyCode> for KeyEvent`.
+- `self.selection.clone()` fails because `Selection` doesn't derive `Clone` and
+  can't easily (`Vec<Vec<bool>>` is cloneable but the borrow checker needs
+  `Option::take()` to avoid simultaneous `&self` + `&mut self` on `self`).
+- Circle scanline fill: `hw = sqrt(r² - dy²)` gives horizontal half-width at row
+  offset dy. Must use `f64` for sqrt, then cast back to `i16` — this is the
+  standard midpoint circle algorithm variant for filled circles.
+- Polygon even-odd fill: `partial_cmp` fallback (`Ordering::Equal`) needed for
+  `sort_by` on `f64` intersections (IEEE NaN edge case, though NaN should never
+  appear in practice with valid geometry).
+- Dashed perimeter overlay rendered in `CanvasWidget::render` by sorting perimeter
+  cells by row-major order then alternating `▒`/space. At zoom>1, all N×N terminal
+  cells of each perimeter buffer cell get the same dash character, preserving the
+  dash pattern at any zoom level.
+- Polygon close-on-click: check `|bx - fx| + |by - fy| < 3` (Manhattan distance
+  < 3) to detect when user clicks near the first vertex. This matches common
+  image editor behavior where closing requires clicking near the start point.
+
 ## 2.4.3 — Line tool
 
 - Full-buffer clone/restore for line preview is simple but `O(n)` on every drag

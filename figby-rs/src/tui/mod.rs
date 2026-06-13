@@ -1,6 +1,6 @@
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseEvent,
-    MouseEventKind,
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers, MouseEvent, MouseEventKind,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -69,6 +69,11 @@ pub struct TuiApp {
     prev_mouse_buf: Option<(i16, i16)>,
     line_start: Option<(i16, i16)>,
     saved_buffer: Option<canvas::CanvasBuffer>,
+    selection: Option<tools::selection::Selection>,
+    clipboard: Option<tools::selection::Clipboard>,
+    selection_drag_origin: Option<(i16, i16)>,
+    selection_polygon_points: Vec<(i16, i16)>,
+    selection_lasso_points: Vec<(i16, i16)>,
 }
 
 impl TuiApp {
@@ -89,6 +94,11 @@ impl TuiApp {
             settings: status::CanvasSettings::new(),
             line_start: None,
             saved_buffer: None,
+            selection: None,
+            clipboard: None,
+            selection_drag_origin: None,
+            selection_polygon_points: Vec::new(),
+            selection_lasso_points: Vec::new(),
         }
     }
 
@@ -166,6 +176,17 @@ impl TuiApp {
         self.last_canvas_size = (inner.width, inner.height);
         self.canvas_inner_rect = inner;
         self.canvas.ensure_cursor_visible(inner.width, inner.height);
+        // Update selection perimeter on canvas for overlay rendering
+        if let Some(ref sel) = self.selection {
+            if sel.is_active() {
+                self.canvas.selection_perimeter = Some(sel.perimeter());
+            } else {
+                self.canvas.selection_perimeter = None;
+            }
+        } else {
+            self.canvas.selection_perimeter = None;
+        }
+        self.canvas.polygon_vertices = self.selection_polygon_points.clone();
         frame.render_widget(block, main_chunks[1]);
         frame.render_widget(&self.canvas, inner);
 
@@ -211,15 +232,24 @@ impl TuiApp {
         if self.settings.settings_open {
             return;
         }
-        if !matches!(
+
+        let is_selection_tool = matches!(
             self.toolbox.selected,
-            Tool::Brush | Tool::Eraser | Tool::Line | Tool::Fill
-        ) {
+            Tool::Marquee | Tool::Lasso | Tool::CircleSelect | Tool::PolygonSelect
+        );
+
+        if !is_selection_tool
+            && !matches!(
+                self.toolbox.selected,
+                Tool::Brush | Tool::Eraser | Tool::Line | Tool::Fill
+            )
+        {
             self.prev_mouse_buf = None;
             self.line_start = None;
             self.saved_buffer = None;
             return;
         }
+
         match mouse.kind {
             MouseEventKind::Down(_) => {
                 let Some((bx, by)) = self.screen_to_buffer(mouse.column, mouse.row) else {
@@ -229,6 +259,12 @@ impl TuiApp {
                 };
                 self.canvas.set_cursor(bx.max(0) as u16, by.max(0) as u16);
                 self.unsaved = true;
+
+                if is_selection_tool {
+                    self.handle_selection_down(bx, by);
+                    return;
+                }
+
                 if self.toolbox.selected == Tool::Fill {
                     let mut cell = canvas::CanvasCell {
                         ch: '\u{2588}',
@@ -276,6 +312,12 @@ impl TuiApp {
                 };
                 self.canvas.set_cursor(bx.max(0) as u16, by.max(0) as u16);
                 self.unsaved = true;
+
+                if is_selection_tool {
+                    self.handle_selection_drag(bx, by);
+                    return;
+                }
+
                 if self.toolbox.selected == Tool::Line {
                     if let (Some((sx, sy)), Some(saved)) = (self.line_start, &self.saved_buffer) {
                         self.canvas.buffer = saved.clone();
@@ -331,9 +373,102 @@ impl TuiApp {
                 self.prev_mouse_buf = Some((bx, by));
             }
             MouseEventKind::Up(_) => {
+                if is_selection_tool {
+                    self.handle_selection_up();
+                }
                 self.prev_mouse_buf = None;
                 self.line_start = None;
                 self.saved_buffer = None;
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_selection_down(&mut self, bx: i16, by: i16) {
+        match self.toolbox.selected {
+            Tool::Marquee => {
+                self.selection = None;
+                self.selection_drag_origin = Some((bx, by));
+            }
+            Tool::CircleSelect => {
+                self.selection = None;
+                self.selection_drag_origin = Some((bx, by));
+            }
+            Tool::Lasso => {
+                self.selection = None;
+                self.selection_lasso_points = vec![(bx, by)];
+            }
+            Tool::PolygonSelect => {
+                let points = &mut self.selection_polygon_points;
+                // If click is near first point, close polygon
+                if points.len() >= 3 {
+                    let (fx, fy) = points[0];
+                    let dist = ((bx - fx).abs() + (by - fy).abs()) as f64;
+                    if dist < 3.0 {
+                        self.selection = Some(tools::selection::Selection::polygon(
+                            &self.canvas.buffer,
+                            points,
+                        ));
+                        points.clear();
+                        return;
+                    }
+                }
+                points.push((bx, by));
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_selection_drag(&mut self, bx: i16, by: i16) {
+        match self.toolbox.selected {
+            Tool::Marquee => {
+                if let Some((ox, oy)) = self.selection_drag_origin {
+                    self.selection = Some(tools::selection::Selection::marquee(
+                        &self.canvas.buffer,
+                        ox,
+                        oy,
+                        bx,
+                        by,
+                    ));
+                }
+            }
+            Tool::CircleSelect => {
+                if let Some((ox, oy)) = self.selection_drag_origin {
+                    let dx = bx - ox;
+                    let dy = by - oy;
+                    let r = ((dx * dx + dy * dy) as f64).sqrt().round() as i16;
+                    self.selection = Some(tools::selection::Selection::circle(
+                        &self.canvas.buffer,
+                        ox,
+                        oy,
+                        r,
+                    ));
+                }
+            }
+            Tool::Lasso => {
+                self.selection_lasso_points.push((bx, by));
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_selection_up(&mut self) {
+        match self.toolbox.selected {
+            Tool::Marquee | Tool::CircleSelect => {
+                // Selection already finalized during drag
+                self.selection_drag_origin = None;
+            }
+            Tool::Lasso => {
+                let points = std::mem::take(&mut self.selection_lasso_points);
+                if points.len() >= 3 {
+                    self.selection = Some(tools::selection::Selection::lasso(
+                        &self.canvas.buffer,
+                        &points,
+                    ));
+                }
+            }
+            Tool::PolygonSelect => {
+                // Polygon is closed on Enter or click-close, not on mouse up
             }
             _ => {}
         }
@@ -343,7 +478,7 @@ impl TuiApp {
         if event::poll(Duration::from_millis(100))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    self.handle_key_event(key.code);
+                    self.handle_key_event(key);
                 }
                 Event::Mouse(mouse) => {
                     self.handle_mouse_event(mouse);
@@ -354,7 +489,11 @@ impl TuiApp {
         Ok(())
     }
 
-    pub fn handle_key_event(&mut self, code: KeyCode) {
+    pub fn handle_key_event(&mut self, key: impl Into<KeyEvent>) {
+        let key = key.into();
+        let code = key.code;
+        let modifiers = key.modifiers;
+
         if self.settings.settings_open {
             if self.settings.handle_key(code) {
                 self.apply_settings();
@@ -366,6 +505,104 @@ impl TuiApp {
             return;
         }
 
+        // Selection operations (before canvas cursor movement)
+        let selection_active = self.selection.as_ref().is_some_and(|s| s.is_active());
+
+        if selection_active {
+            match code {
+                // Arrow keys: move selection
+                KeyCode::Up => {
+                    self.move_selection(0, -1);
+                    self.unsaved = true;
+                    return;
+                }
+                KeyCode::Down => {
+                    self.move_selection(0, 1);
+                    self.unsaved = true;
+                    return;
+                }
+                KeyCode::Left => {
+                    self.move_selection(-1, 0);
+                    self.unsaved = true;
+                    return;
+                }
+                KeyCode::Right => {
+                    self.move_selection(1, 0);
+                    self.unsaved = true;
+                    return;
+                }
+                KeyCode::Delete | KeyCode::Backspace => {
+                    if let Some(sel) = self.selection.take() {
+                        sel.delete_from(&mut self.canvas.buffer);
+                        self.unsaved = true;
+                    }
+                    return;
+                }
+                _ => {}
+            }
+
+            // Ctrl+C/X/V
+            if modifiers.contains(KeyModifiers::CONTROL) {
+                match code {
+                    KeyCode::Char('c') => {
+                        if let Some(ref sel) = self.selection {
+                            self.clipboard = Some(sel.copy_from(&self.canvas.buffer));
+                        }
+                        return;
+                    }
+                    KeyCode::Char('x') => {
+                        if let Some(sel) = self.selection.take() {
+                            self.clipboard = Some(sel.cut_from(&mut self.canvas.buffer));
+                            self.unsaved = true;
+                        }
+                        return;
+                    }
+                    KeyCode::Char('v') => {
+                        if let Some(ref clip) = self.clipboard {
+                            let (cx, cy) = self.canvas.cursor();
+                            tools::selection::Selection::paste_into(
+                                &mut self.canvas.buffer,
+                                clip,
+                                cx as i16,
+                                cy as i16,
+                            );
+                            self.unsaved = true;
+                        }
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Polygon select tool: Enter closes polygon, Esc cancels
+        if self.toolbox.selected == Tool::PolygonSelect && !self.selection_polygon_points.is_empty()
+        {
+            match code {
+                KeyCode::Enter => {
+                    let points = std::mem::take(&mut self.selection_polygon_points);
+                    if points.len() >= 3 {
+                        self.selection = Some(tools::selection::Selection::polygon(
+                            &self.canvas.buffer,
+                            &points,
+                        ));
+                    }
+                    return;
+                }
+                KeyCode::Esc => {
+                    self.selection_polygon_points.clear();
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        // Deselect on Esc (only when a selection exists)
+        if self.selection.is_some() && code == KeyCode::Esc {
+            self.selection = None;
+            return;
+        }
+
         if self
             .canvas
             .handle_key(code, self.last_canvas_size.0, self.last_canvas_size.1)
@@ -373,6 +610,10 @@ impl TuiApp {
             return;
         }
         if self.toolbox.handle_key(code) {
+            // Clear polygon points when switching away from PolygonSelect
+            if self.toolbox.selected != Tool::PolygonSelect {
+                self.selection_polygon_points.clear();
+            }
             return;
         }
         match code {
@@ -440,7 +681,10 @@ impl TuiApp {
             KeyCode::Tab => {
                 self.mode = self.mode.next();
             }
-            KeyCode::Char('q') | KeyCode::Esc => {
+            KeyCode::Char('q') if !modifiers.contains(KeyModifiers::CONTROL) => {
+                self.should_quit = true;
+            }
+            KeyCode::Esc => {
                 self.should_quit = true;
             }
             KeyCode::Char('S') => {
@@ -450,6 +694,14 @@ impl TuiApp {
                 self.settings.settings_open = true;
             }
             _ => {}
+        }
+    }
+
+    fn move_selection(&mut self, dx: i16, dy: i16) {
+        if let Some(ref mut sel) = self.selection {
+            if sel.is_active() {
+                sel.move_selection(&mut self.canvas.buffer, dx, dy);
+            }
         }
     }
 
