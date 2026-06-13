@@ -331,3 +331,119 @@ fn test_canvas_zoom_shows_grid() {
     assert!(output.contains('│'), "expected vertical grid line │");
     assert!(output.contains('─'), "expected horizontal grid line ─");
 }
+
+#[test]
+fn test_palette_default_target_foreground() {
+    use figby::tui::palette::{ColorTarget, Palette};
+    let palette = Palette::new();
+    assert_eq!(palette.target, ColorTarget::Foreground);
+}
+
+#[test]
+fn test_palette_fg_bg_toggle() {
+    use crossterm::event::KeyCode;
+    use figby::tui::palette::{ColorTarget, Palette};
+
+    let mut palette = Palette::new();
+    assert_eq!(palette.target, ColorTarget::Foreground);
+
+    palette.handle_key(KeyCode::Char('x'));
+    assert_eq!(palette.target, ColorTarget::Background);
+
+    palette.handle_key(KeyCode::Char('x'));
+    assert_eq!(palette.target, ColorTarget::Foreground);
+
+    palette.handle_key(KeyCode::Char('X'));
+    assert_eq!(palette.target, ColorTarget::Background);
+
+    palette.handle_key(KeyCode::Char('X'));
+    assert_eq!(palette.target, ColorTarget::Foreground);
+}
+
+#[test]
+fn test_palette_select_color_updates_selected() {
+    use figby::tui::palette::{Palette, ANSI_16_COLORS};
+
+    let mut palette = Palette::new();
+    palette.select_color(1);
+    assert_eq!(palette.selected_color, Some(ANSI_16_COLORS[1]));
+
+    palette.select_color(7);
+    assert_eq!(palette.selected_color, Some(ANSI_16_COLORS[7]));
+}
+
+#[test]
+fn test_palette_select_pushes_recent() {
+    use figby::tui::palette::{Palette, ANSI_16_COLORS};
+
+    let mut palette = Palette::new();
+    assert!(palette.recent.is_empty());
+
+    palette.select_color(1);
+    assert_eq!(palette.recent.len(), 1);
+    assert_eq!(palette.recent[0], ANSI_16_COLORS[1]);
+
+    palette.select_color(5);
+    assert_eq!(palette.recent.len(), 2);
+    assert_eq!(palette.recent[1], ANSI_16_COLORS[5]);
+
+    palette.select_color(1);
+    assert_eq!(palette.recent.len(), 2);
+    assert_eq!(palette.recent[1], ANSI_16_COLORS[1]);
+}
+
+#[test]
+fn test_palette_custom_hex_applies() {
+    use figby::tui::palette::Palette;
+    use ratatui::style::Color;
+
+    let mut palette = Palette::new();
+    let result = palette.set_custom_hex("#FF8800");
+    assert!(result);
+    assert_eq!(palette.selected_color, Some(Color::Rgb(255, 136, 0)));
+}
+
+#[test]
+fn test_palette_apply_to_cell_fg() {
+    use figby::tui::canvas::CanvasCell;
+    use figby::tui::palette::{Palette, ANSI_16_COLORS};
+
+    let mut palette = Palette::new();
+    palette.select_color(2);
+    let mut cell = CanvasCell::default();
+    palette.apply_to_cell(&mut cell);
+    assert_eq!(cell.fg, Some(ANSI_16_COLORS[2]));
+    assert_eq!(cell.bg, None);
+}
+
+#[test]
+fn test_palette_apply_to_cell_bg() {
+    use figby::tui::canvas::CanvasCell;
+    use figby::tui::palette::{Palette, ANSI_16_COLORS};
+
+    let mut palette = Palette::new();
+    palette.toggle_target();
+    palette.select_color(4);
+    let mut cell = CanvasCell::default();
+    palette.apply_to_cell(&mut cell);
+    assert_eq!(cell.fg, None);
+    assert_eq!(cell.bg, Some(ANSI_16_COLORS[4]));
+}
+
+#[test]
+fn test_palette_render_contains_labels() {
+    use figby::tui::TuiApp;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    let mut app = TuiApp::new();
+    app.palette.select_color(0);
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|f| app.render(f)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let output: String = buffer.content().iter().map(|c| c.symbol()).collect();
+    assert!(output.contains("FG"), "palette missing FG indicator");
+    assert!(output.contains("BG"), "palette missing BG indicator");
+    assert!(output.contains("Recent"), "palette missing Recent label");
+}

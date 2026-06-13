@@ -642,3 +642,18 @@ Created `figby-rs/src/tui/canvas.rs` — scrollable/zoomable canvas widget:
 - Canvas placed before toolbox in key dispatch order.
 - 6 integration tests: empty render, cell rendering, cursor movement, zoom in/out, cursor highlight style, grid characters at zoom=2.
 - Memory entry on `Buffer::cell_mut` returning `Option<&mut Cell>` (non-panicking, matches invariants).
+
+### 2.3.4 — Color palette
+
+Created `figby-rs/src/tui/palette.rs` — color palette sidebar widget:
+- `ColorTarget` enum: `Foreground`/`Background` with `toggle()` method
+- `ANSI_16_COLORS` constant: 16 standard indexed colors (0-15)
+- `extended_color()` helper: computes 240-color extended grid via page/offset → `Color::Indexed(idx.min(255))`
+- `Palette` struct: owns target, selected_color, recent colors (max 8), selected_index, custom_hex input, extended mode/page state
+- Keyboard: arrows navigate grid, Enter selects, `x`/`X` toggles FG/BG, `f`/`F` sets FG, `h`/`H` enters hex mode, `z`/`Z` toggles extended grid
+- `set_custom_hex()` — parses `#RRGGBB` string via `u8::from_str_radix`, returns `bool` on success
+- `apply_to_cell()` — applies selected color to `CanvasCell.fg` or `.bg` based on target
+- `render()` — renders FG/BG indicator, color swatches (2 rows of 8), hex display, recent colors strip
+- `push_recent()` — deduplicates and rotates recent colors, capped at 8
+- Registered as `palette` module in `tui/mod.rs`, added `palette: Palette` field to `TuiApp`
+- 8 integration tests in `tests/tui.rs`: default target, FG/BG toggle, selection, recent push, hex apply, apply to cell (fg/bg), render labels

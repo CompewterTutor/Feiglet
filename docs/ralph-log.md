@@ -334,3 +334,7 @@ DONE: 2.3.1 merged into release/2.3.
 ## 2026-06-13 13:04
 
 DONE: 2.3.2 merged into release/2.3.
+
+## 2026-06-13 13:12
+
+DONE: 2.3.3 merged into release/2.3.
