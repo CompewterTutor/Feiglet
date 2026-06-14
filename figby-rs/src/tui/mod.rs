@@ -1,6 +1,6 @@
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -16,21 +16,27 @@ use ratatui::widgets::{Block, Borders, Tabs};
 use ratatui::Frame;
 use std::collections::BTreeMap;
 use std::io;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use crate::config;
 use crate::font::load_font;
 use crate::render::Justification;
 
 pub mod brush;
 pub mod canvas;
+pub mod export;
+pub mod file_ops;
 pub mod font_editor;
 pub mod image_editor;
 pub mod palette;
 pub mod status;
 pub mod toolbox;
 pub mod tools;
+pub mod undo;
+pub mod undo_panel;
 
 pub use brush::BrushState;
+pub use export::ExportMode;
 pub use palette::Palette;
 pub use status::CanvasSettings;
 pub use toolbox::Tool;
@@ -87,15 +93,51 @@ pub struct TuiApp {
     selection_drag_origin: Option<(i16, i16)>,
     selection_polygon_points: Vec<(i16, i16)>,
     selection_lasso_points: Vec<(i16, i16)>,
+    pub file_ops: file_ops::FileOpsDialog,
+    pub recent_files: file_ops::RecentFiles,
+    pub export_dialog: export::ExportDialog,
+    auto_save_interval: u64,
+    last_save_time: Instant,
+    pub undo: undo::UndoSystem,
+    pub undo_panel: undo_panel::UndoPanel,
 }
 
 impl TuiApp {
     pub fn new() -> Self {
         let icons = serde_yaml::from_str(ICONS_YAML).unwrap_or_default();
 
+        let config = config::load_config();
+
+        let mut brush = brush::BrushState::new();
+        if let Some(ref shape) = config.tui.brush.shape {
+            brush.shape = match shape.as_str() {
+                "square" => brush::BrushShape::Square,
+                "circle" => brush::BrushShape::Circle,
+                "spray" => brush::BrushShape::SprayPaint,
+                "custom" => brush::BrushShape::Custom,
+                _ => brush.shape,
+            };
+        }
+        if let Some(size) = config.tui.brush.size {
+            brush.set_size(size);
+        }
+        if let Some(density) = config.tui.brush.density {
+            brush.set_density(density);
+        }
+        if let Some(ref ch_str) = config.tui.brush.ch {
+            if let Some(ch) = ch_str.chars().next() {
+                brush.ch = ch;
+            }
+        }
+
         let mut fe = font_editor::FontEditor::new();
         if let Ok(font) = load_font("standard", "fonts") {
             fe.load_font(font);
+        }
+
+        let mut rf = file_ops::RecentFiles::load_from_disk();
+        if let Some(max) = config.tui.recent_files_max {
+            rf.set_max(max);
         }
 
         Self {
@@ -105,7 +147,7 @@ impl TuiApp {
             toolbox: toolbox::Toolbox::new(),
             canvas: canvas::CanvasWidget::default(),
             palette: palette::Palette::new(),
-            brush: brush::BrushState::new(),
+            brush,
             text_tool: tools::text::TextToolState::new("fonts"),
             font_editor: fe,
             image_editor: image_editor::ImageEditor::new(),
@@ -123,6 +165,13 @@ impl TuiApp {
             selection_drag_origin: None,
             selection_polygon_points: Vec::new(),
             selection_lasso_points: Vec::new(),
+            file_ops: file_ops::FileOpsDialog::new(),
+            recent_files: rf,
+            export_dialog: export::ExportDialog::new(),
+            auto_save_interval: 0,
+            last_save_time: Instant::now(),
+            undo: undo::UndoSystem::new(config.tui.undo_limit.unwrap_or(50)),
+            undo_panel: undo_panel::UndoPanel::new(),
         }
     }
 
@@ -132,7 +181,12 @@ impl TuiApp {
 
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        execute!(
+            stdout,
+            EnterAlternateScreen,
+            EnableMouseCapture,
+            EnableBracketedPaste
+        )?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
@@ -145,6 +199,7 @@ impl TuiApp {
         execute!(
             terminal.backend_mut(),
             DisableMouseCapture,
+            DisableBracketedPaste,
             LeaveAlternateScreen
         )?;
         terminal.show_cursor()?;
@@ -345,7 +400,36 @@ impl TuiApp {
             &mode_name,
             self.unsaved,
             &self._icons,
+            self.font_editor.current_path.as_deref(),
         );
+
+        // Render export dialog overlay if active
+        if self.export_dialog.active {
+            let overlay = Rect {
+                x: frame.area().width / 6,
+                y: frame.area().height / 6,
+                width: frame.area().width * 2 / 3,
+                height: frame.area().height * 2 / 3,
+            };
+            self.export_dialog.render(frame, overlay);
+        }
+
+        // Render file ops overlay if active
+        if self.file_ops.mode != file_ops::FileOpsMode::Idle {
+            let overlay = Rect {
+                x: frame.area().width / 6,
+                y: frame.area().height / 6,
+                width: frame.area().width * 2 / 3,
+                height: frame.area().height * 2 / 3,
+            };
+            self.file_ops.render(frame, overlay);
+        }
+
+        // Render undo history panel overlay if open
+        if self.undo_panel.open {
+            self.undo_panel
+                .render(frame, frame.area(), self.undo.history_entries());
+        }
     }
 
     fn sync_canvas_to_font_char(&mut self) {
@@ -498,7 +582,10 @@ impl TuiApp {
                     return;
                 }
 
+                // Start batch for drag operations, push initial snapshot
+                self.undo.begin_batch();
                 if self.toolbox.selected == Tool::Fill {
+                    self.push_undo_snapshot("Flood fill");
                     let mut cell = canvas::CanvasCell {
                         ch: self.brush.ch,
                         fg: None,
@@ -509,11 +596,13 @@ impl TuiApp {
                     return;
                 }
                 if self.toolbox.selected == Tool::Line {
+                    self.push_undo_snapshot("Line tool");
                     self.line_start = Some((bx, by));
                     self.saved_buffer = Some(self.canvas.buffer.clone());
                     return;
                 }
                 if self.toolbox.selected == Tool::Eraser {
+                    self.push_undo_snapshot("Eraser");
                     tools::eraser::erase_stamp(
                         &mut self.canvas.buffer,
                         bx,
@@ -531,6 +620,7 @@ impl TuiApp {
                         }
                     }
                 } else if self.toolbox.selected == Tool::Spray {
+                    self.push_undo_snapshot("Spray");
                     let mut cell = canvas::CanvasCell {
                         ch: self.brush.ch,
                         fg: None,
@@ -548,6 +638,7 @@ impl TuiApp {
                         &mut rng,
                     );
                 } else {
+                    self.push_undo_snapshot("Brush");
                     let mut cell = canvas::CanvasCell {
                         ch: self.brush.ch,
                         fg: None,
@@ -651,6 +742,7 @@ impl TuiApp {
                 self.prev_mouse_buf = Some((bx, by));
             }
             MouseEventKind::Up(_) => {
+                self.undo.end_batch();
                 if is_selection_tool {
                     self.handle_selection_up();
                 }
@@ -757,6 +849,11 @@ impl TuiApp {
         }
     }
 
+    fn push_undo_snapshot(&mut self, label: &str) {
+        self.undo
+            .push_snapshot(self.canvas.buffer.clone(), label.to_string());
+    }
+
     pub fn handle_event(&mut self) -> io::Result<()> {
         if event::poll(Duration::from_millis(100))? {
             loop {
@@ -767,6 +864,9 @@ impl TuiApp {
                     Event::Mouse(mouse) => {
                         self.handle_mouse_event(mouse);
                     }
+                    Event::Paste(text) => {
+                        self.handle_paste_event(text);
+                    }
                     _ => {}
                 }
                 if !event::poll(Duration::ZERO)? {
@@ -774,6 +874,19 @@ impl TuiApp {
                 }
             }
         }
+
+        // Auto-save check
+        if self.auto_save_interval > 0 && self.unsaved && self.mode == AppMode::FontEditor {
+            if let Some(ref path) = self.font_editor.current_path {
+                if self.last_save_time.elapsed() >= Duration::from_secs(self.auto_save_interval) {
+                    if let Some(ref font) = self.font_editor.font {
+                        let _ = file_ops::save_font(font, path);
+                        self.last_save_time = Instant::now();
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -781,6 +894,71 @@ impl TuiApp {
         let key = key.into();
         let code = key.code;
         let modifiers = key.modifiers;
+
+        // File ops dialog active: dispatch all keys to it
+        if self.file_ops.mode != file_ops::FileOpsMode::Idle {
+            let prev_mode = self.file_ops.mode;
+            if self.file_ops.handle_key(code) && self.file_ops.mode == file_ops::FileOpsMode::Idle {
+                match prev_mode {
+                    file_ops::FileOpsMode::SaveAs => self.perform_save(),
+                    file_ops::FileOpsMode::Open => self.perform_open(),
+                    _ => {}
+                }
+            }
+            return;
+        }
+
+        // Export dialog active: dispatch all keys to it
+        if self.export_dialog.active {
+            if self.export_dialog.handle_key(code) && !self.export_dialog.active {
+                self.perform_export();
+            }
+            return;
+        }
+
+        // Undo history panel open: dispatch to it first
+        if self.undo_panel.open && self.undo_panel.handle_key(code) {
+            return;
+        }
+
+        // Undo/redo: Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z
+        if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('z') {
+            let empty = canvas::CanvasBuffer::new(1, 1);
+            if modifiers.contains(KeyModifiers::SHIFT) {
+                // Ctrl+Shift+Z = redo
+                let cur = std::mem::replace(&mut self.canvas.buffer, empty);
+                if let Some((buf, _)) = self.undo.redo(cur) {
+                    self.canvas.buffer = buf;
+                    self.unsaved = true;
+                }
+            } else {
+                // Ctrl+Z = undo
+                let cur = std::mem::replace(&mut self.canvas.buffer, empty);
+                if let Some((buf, _)) = self.undo.undo(cur) {
+                    self.canvas.buffer = buf;
+                    self.unsaved = true;
+                }
+            }
+            return;
+        }
+        if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('y') {
+            let empty = canvas::CanvasBuffer::new(1, 1);
+            let cur = std::mem::replace(&mut self.canvas.buffer, empty);
+            if let Some((buf, _)) = self.undo.redo(cur) {
+                self.canvas.buffer = buf;
+                self.unsaved = true;
+            }
+            return;
+        }
+
+        // Ctrl+Shift+H: toggle undo history panel
+        if modifiers.contains(KeyModifiers::CONTROL)
+            && modifiers.contains(KeyModifiers::SHIFT)
+            && code == KeyCode::Char('h')
+        {
+            self.undo_panel.toggle();
+            return;
+        }
 
         if self.settings.settings_open {
             if self.settings.handle_key(code) {
@@ -805,15 +983,22 @@ impl TuiApp {
         }
 
         // Image Editor mode: dispatch to image_editor before canvas/tools
-        if self.mode == AppMode::ImageEditor && self.image_editor.handle_key(code) {
-            self.sync_image_to_canvas();
-            return;
+        if self.mode == AppMode::ImageEditor {
+            let was_entering = self.image_editor.entering_path();
+            if self.image_editor.handle_key(code) {
+                self.sync_image_to_canvas();
+                if was_entering && !self.image_editor.entering_path() {
+                    self.undo.clear();
+                }
+                return;
+            }
         }
 
         // Text tool: text entry mode (before canvas, captures all keys)
         if self.toolbox.selected == Tool::Text && self.text_tool.entering_text {
             match code {
                 KeyCode::Enter => {
+                    self.push_undo_snapshot("Commit text");
                     self.text_tool.commit_block();
                     self.unsaved = true;
                     return;
@@ -868,41 +1053,49 @@ impl TuiApp {
         {
             match code {
                 KeyCode::Up => {
+                    self.push_undo_snapshot("Move text block");
                     self.text_tool.move_selected_block(0, -1);
                     self.unsaved = true;
                     return;
                 }
                 KeyCode::Down => {
+                    self.push_undo_snapshot("Move text block");
                     self.text_tool.move_selected_block(0, 1);
                     self.unsaved = true;
                     return;
                 }
                 KeyCode::Left => {
+                    self.push_undo_snapshot("Move text block");
                     self.text_tool.move_selected_block(-1, 0);
                     self.unsaved = true;
                     return;
                 }
                 KeyCode::Right => {
+                    self.push_undo_snapshot("Move text block");
                     self.text_tool.move_selected_block(1, 0);
                     self.unsaved = true;
                     return;
                 }
                 KeyCode::Char('+') | KeyCode::Char('=') => {
+                    self.push_undo_snapshot("Scale text block");
                     self.text_tool.scale_selected_block(1);
                     self.unsaved = true;
                     return;
                 }
                 KeyCode::Char('-') | KeyCode::Char('_') => {
+                    self.push_undo_snapshot("Scale text block");
                     self.text_tool.scale_selected_block(-1);
                     self.unsaved = true;
                     return;
                 }
                 KeyCode::Char('r') | KeyCode::Char('R') => {
+                    self.push_undo_snapshot("Rotate text block");
                     self.text_tool.rotate_selected_block();
                     self.unsaved = true;
                     return;
                 }
                 KeyCode::Delete | KeyCode::Backspace => {
+                    self.push_undo_snapshot("Delete text block");
                     self.text_tool.delete_selected_block();
                     self.unsaved = true;
                     return;
@@ -928,26 +1121,31 @@ impl TuiApp {
             match code {
                 // Arrow keys: move selection
                 KeyCode::Up => {
+                    self.push_undo_snapshot("Move selection");
                     self.move_selection(0, -1);
                     self.unsaved = true;
                     return;
                 }
                 KeyCode::Down => {
+                    self.push_undo_snapshot("Move selection");
                     self.move_selection(0, 1);
                     self.unsaved = true;
                     return;
                 }
                 KeyCode::Left => {
+                    self.push_undo_snapshot("Move selection");
                     self.move_selection(-1, 0);
                     self.unsaved = true;
                     return;
                 }
                 KeyCode::Right => {
+                    self.push_undo_snapshot("Move selection");
                     self.move_selection(1, 0);
                     self.unsaved = true;
                     return;
                 }
                 KeyCode::Delete | KeyCode::Backspace => {
+                    self.push_undo_snapshot("Delete selection");
                     if let Some(sel) = self.selection.take() {
                         sel.delete_from(&mut self.canvas.buffer);
                         self.unsaved = true;
@@ -967,6 +1165,7 @@ impl TuiApp {
                         return;
                     }
                     KeyCode::Char('x') => {
+                        self.push_undo_snapshot("Cut selection");
                         if let Some(sel) = self.selection.take() {
                             self.clipboard = Some(sel.cut_from(&mut self.canvas.buffer));
                             self.unsaved = true;
@@ -974,6 +1173,7 @@ impl TuiApp {
                         return;
                     }
                     KeyCode::Char('v') => {
+                        self.push_undo_snapshot("Paste");
                         if let Some(ref clip) = self.clipboard {
                             let (cx, cy) = self.canvas.cursor();
                             tools::selection::Selection::paste_into(
@@ -1106,6 +1306,7 @@ impl TuiApp {
         ) && matches!(code, KeyCode::Char(' ') | KeyCode::Enter)
         {
             let (cx, cy) = self.canvas.cursor();
+            self.push_undo_snapshot("Keyboard paint");
             if self.toolbox.selected == Tool::Fill {
                 let mut cell = canvas::CanvasCell {
                     ch: self.brush.ch,
@@ -1159,9 +1360,44 @@ impl TuiApp {
             return;
         }
 
+        // Ctrl+O: Open font
+        if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('o') {
+            self.start_open();
+            return;
+        }
+
+        // Ctrl+S: Save (or Save As if no path)
+        if modifiers.contains(KeyModifiers::CONTROL)
+            && !modifiers.contains(KeyModifiers::SHIFT)
+            && code == KeyCode::Char('s')
+        {
+            self.start_save();
+            return;
+        }
+
+        // Ctrl+Shift+S: always Save As
+        if modifiers.contains(KeyModifiers::CONTROL)
+            && modifiers.contains(KeyModifiers::SHIFT)
+            && code == KeyCode::Char('s')
+        {
+            self.start_save_as();
+            return;
+        }
+
+        // Ctrl+E: Open export dialog
+        if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('e') {
+            let mode = match self.mode {
+                AppMode::FontEditor => export::ExportMode::Txt,
+                _ => export::ExportMode::Png,
+            };
+            self.export_dialog.enter_export(mode);
+            return;
+        }
+
         match code {
             KeyCode::Tab => {
                 self.mode = self.mode.next();
+                self.undo.clear();
             }
             KeyCode::Char('q') if !modifiers.contains(KeyModifiers::CONTROL) => {
                 self.should_quit = true;
@@ -1181,11 +1417,119 @@ impl TuiApp {
         }
     }
 
+    fn start_save(&mut self) {
+        if self.mode != AppMode::FontEditor {
+            return;
+        }
+        if let Some(ref path) = self.font_editor.current_path {
+            if let Some(ref font) = self.font_editor.font {
+                match file_ops::save_font(font, path) {
+                    Ok(()) => {
+                        self.unsaved = false;
+                        self.last_save_time = Instant::now();
+                    }
+                    Err(e) => {
+                        self.file_ops.error_message = format!("Save failed: {e}");
+                    }
+                }
+            }
+        } else {
+            self.start_save_as();
+        }
+    }
+
+    fn start_save_as(&mut self) {
+        if self.mode != AppMode::FontEditor {
+            return;
+        }
+        self.file_ops
+            .enter_save_as(self.font_editor.current_path.as_deref());
+    }
+
+    fn perform_save(&mut self) {
+        let path = self.file_ops.selected_path();
+        if let Some(ref font) = self.font_editor.font {
+            match file_ops::save_font(font, &path) {
+                Ok(()) => {
+                    self.unsaved = false;
+                    self.font_editor.current_path = Some(path);
+                    self.last_save_time = Instant::now();
+                    self.file_ops.error_message.clear();
+                }
+                Err(e) => {
+                    self.file_ops.error_message = format!("Save failed: {e}");
+                }
+            }
+        }
+    }
+
+    fn handle_paste_event(&mut self, text: String) {
+        if self.file_ops.mode != file_ops::FileOpsMode::Idle {
+            self.file_ops.handle_paste(&text);
+        }
+        // TODO: when not active but a font file path is detected, trigger open flow
+        // For now, paste is only handled when dialog is active
+    }
+
+    fn start_open(&mut self) {
+        if self.mode != AppMode::FontEditor {
+            return;
+        }
+        self.file_ops.enter_open(self.recent_files.list());
+    }
+
+    fn perform_open(&mut self) {
+        let path = self.file_ops.selected_path();
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                self.file_ops.error_message = format!("Cannot read file: {e}");
+                self.file_ops.mode = file_ops::FileOpsMode::Open;
+                return;
+            }
+        };
+        let font = match crate::font::parse_tlf_font(&content) {
+            Ok(f) => f,
+            Err(e) => {
+                self.file_ops.error_message = format!("Parse error: {e}");
+                self.file_ops.mode = file_ops::FileOpsMode::Open;
+                return;
+            }
+        };
+        self.unsaved = false;
+        self.undo.clear();
+        self.font_editor.load_font(font);
+        self.font_editor.current_path = Some(path.clone());
+        self.recent_files.push(path);
+        self.recent_files.save_to_disk();
+        self.file_ops.error_message.clear();
+    }
+
+    fn perform_export(&mut self) {
+        let cells: Vec<Vec<canvas::CanvasCell>> = (0..self.canvas.buffer.height())
+            .map(|y| {
+                (0..self.canvas.buffer.width())
+                    .map(|x| self.canvas.buffer.get(x, y).copied().unwrap_or_default())
+                    .collect()
+            })
+            .collect();
+        match self.export_dialog.perform_export(&cells) {
+            Ok(()) => {
+                self.export_dialog.active = false;
+            }
+            Err(e) => {
+                self.export_dialog.error_message = format!("Export failed: {e}");
+                self.export_dialog.active = true;
+            }
+        }
+    }
+
     fn apply_settings(&mut self) {
         let w = self.settings.canvas_width as usize;
         let h = self.settings.canvas_height as usize;
         if self.canvas.buffer.width() != w || self.canvas.buffer.height() != h {
             self.canvas = canvas::CanvasWidget::new(w as u16, h as u16);
+            self.undo.clear();
         }
         if self.settings.show_grid != self.canvas.show_grid() {
             self.canvas.toggle_grid();

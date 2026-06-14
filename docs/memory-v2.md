@@ -415,3 +415,49 @@ image import + canvas display (2.6.1), text tool with FIGlet font overlay
 image adjustments (brightness/contrast/threshold/dither/invert/resize) (2.6.4).
 All 4 subtasks (2.6.1–2.6.4) implemented, tested, merged. Phase 2.7 (File
 Operations & Persistence) is next.
+
+### 2.7.2 — Open / recent files
+
+Added `FileOpsMode::Open` variant. `RecentFiles` struct with push/load/save
+(max 10 entries, dedup on push, persisted to XDG data dir). `enter_open()`
+method populates dialog with recent file list for display. `handle_key_open()`
+supports path typing, digit keys (1-9) for recent file selection, directory
+navigation (Up/Down/Tab/Enter/Esc). `render_open()` shows "Open Font" dialog
+with path entry, directory listing (`.flf`/`.tlf`+dirs), recent files section,
+and key hints. `handle_paste()` for drag-and-drop path entry from file manager.
+
+Bracketed paste mode enabled in `run()` (`EnableBracketedPaste`/`DisableBracketedPaste`).
+`Event::Paste(text)` handled in event loop — when file ops dialog is active,
+text is inserted into path buffer.
+
+`Ctrl+O` key binding starts open dialog. `start_open()` sets mode and populates
+recent files. `perform_open()` reads file, parses via `parse_tlf_font()`, loads
+into font editor, pushes to recent files, saves to disk. `open_recent_file()`
+(stubbed, removed as dead code — digit keys fill path buffer then Enter performs
+open via `perform_open()`).
+
+Fixed `is_dir` detection in `render_save_as()` — was using `PathBuf::from(entry).is_dir()`
+(checking CWD instead of parent directory). Now joins with parent path before
+checking. Same fix applied in `render_open()`.
+
+Recent files stored as newline-separated paths at `~/.local/share/figby/recent.json`
+(XDG) with fallback to `~/.figby/recent.json`. No dependency added — manual
+serialization avoids `serde_json`.
+
+17 unit tests: open dialog state management (enter/exit/type/paste/finalize),
+recent files (push/max/dedup/roundtrip/missing/remove), known font verification
+(95 ASCII + 7 Deutsch chars in standard.flf), recent file selection by digit key.
+
+### 2.7.7 — Phase merge: release/2.7 → main
+
+Merged v2.7 (file ops, config, undo) into main. Also included:
+- `run_tests.rs` fix: set `FIGLET_FONTDIR` env var so integration tests find fonts
+- Renamed `fonts-external/` submodule → `figby-fonts/`, repointed to fork at
+  `github.com:CompewterTutor/figby-fonts.git`
+- Standard FIGlet fonts (18 `.flf`) copied into `figby-fonts/fonts/`
+- Created `docs/todo-v3.md` and `docs/memory-v3.md` for v3 milestone
+- Moved layers/timeline tasks from v2.8/v2.9 → v3.1/v3.2
+- Replaced v2.8 with TUI architecture & backend cleanup (Component arch, crossterm,
+  ratatui init/run)
+- Replaced v2.9 with UI polish & third-party widgets (tui-menu, throbber, theming,
+  tab icons, brush preview)

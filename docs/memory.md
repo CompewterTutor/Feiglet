@@ -8,6 +8,7 @@ Master memory index. Detailed entries live in versioned files below.
 |-----------|------|--------|
 | v1 — Port | [memory-v1.md](memory-v1.md) | Active |
 | v2 — Templates, Images & TUI | [memory-v2.md](memory-v2.md) | Active |
+| v3 — TUI Refinement & Animation | [memory-v3.md](memory-v3.md) | Active |
 
 ## Architectural Decisions
 
@@ -999,3 +1000,144 @@ image import + canvas display (2.6.1), text tool with FIGlet font overlay
 image adjustments (brightness/contrast/threshold/dither/invert/resize) (2.6.4).
 All 4 subtasks (2.6.1–2.6.4) implemented, tested, merged. Phase 2.7 (File
 Operations & Persistence) is next.
+
+### 2.7.1 — Save / Save As
+
+Created `figby-rs/src/tui/file_ops.rs` with `FileOpsDialog` (file browser
+overlay widget), `save_font()` function, and `FileOpsMode` enum (Idle/SaveAs
+/AutoSaveConfig). Key behaviors:
+- `save_font(font, path)` — generates `.flf` content via `generate_figfont()`,
+  writes to temp file, atomically renames to target path. Returns `io::Result`.
+- `FileOpsDialog` — TUI overlay with path text entry, directory listing
+  (`.flf`/`.tlf` files + subdirectories), keyboard navigation (arrows, Tab
+  to select entry, Enter to confirm, Esc to cancel).
+- Ctrl+S in Font Editor mode: saves directly if `current_path` set, opens
+  Save As dialog otherwise. Ctrl+Shift+S: always opens Save As dialog.
+- Auto-save timer: `auto_save_interval` (seconds, 0=disabled) checked in
+  `handle_event()` loop. Saves current font when timer elapses and `unsaved`
+  is true.
+- `FontEditor` gained `current_path: Option<PathBuf>` field for tracking
+  file location.
+- Status bar shows filename (with `*` prefix if unsaved) and save key hints
+  (`^S Save | ^S+S Save As`).
+- Atomic write via `write()` to `.tmp` file then `fs::rename()` prevents
+  partial save corruption.
+- 8 unit tests: roundtrip save+reload byte-exact, valid `.flf` generation,
+  error handling for invalid paths, dialog state management, path extension
+  logic. No `.unwrap()` in production. fmt and clippy pass clean.
+
+### 2.7.3 — Copy / duplicate font
+
+Added font duplication and import features to `FontEditor`:
+- `transform_duplicate()` — clones current font into `original_font` field, sets cloned
+  font as active, clears `current_path`, sets `font_storage_name` to `"Untitled Copy"`,
+  resets undo/redo stacks. Enables "edit one, verify other unchanged" workflow.
+- `transform_import_font(name, fontdir)` — loads external `.flf`/`.tlf` via `load_font()`,
+  merges every glyph into current font via `font.chars.insert()` (last-wins for duplicates).
+- `original_font: Option<FIGfont>` field added to `FontEditor` — stores pre-duplicate font
+  state for independence verification.
+- TRANSFORM_LABELS expanded from 6 to 8 entries: added "Duplicate Font" (index 6, immediate
+  action, no input) and "Import Font" (index 7, prompts for font name).
+- Existing tests updated for 8-transform navigation. 7 new unit tests: duplicate font,
+  duplicate independence, import merges glyphs, import overwrites duplicates, duplicate
+  empty font, import nonexistent font. Only `font_editor.rs` touched. fmt and clippy pass clean.
+
+### 2.7.4 — Export: PNG, TXT, GIF
+
+Created `output.rs` — pure-function output module with:
+- `ExportFormat` enum (Png/Txt/Gif), `ExportError` enum
+- `BITMAP_FONT_8X16` — 95-char × 16-byte VGA 8×16 bitmap font (public domain)
+- `color_to_rgb()` / `xterm_to_rgb()` — ratatui `Color` → (r,g,b) conversion, 256-color xterm palette
+- `rasterize_char()` — renders char to RGBA pixel grid at 1×-4× scale
+- `render_frame()` — full frame rasterization from CanvasCell grid
+- `export_cells_to_png()` — RGBA PNG bytes via `image::codecs::png::PngEncoder`
+- `export_cells_to_txt()` — flat ASCII text, no color codes
+- `export_cells_to_gif()` — animated GIF via `gif` crate, truecolor frames, infinite loop
+
+Created `tui/export.rs` — TUI export dialog:
+- `ExportMode` enum (Png/Txt/Gif) with cycle/label/extension helpers
+- `ExportDialog` struct: active flag, format, path buffer, font size (1-4, default 2)
+- `enter_export(mode)` / `close()` / `handle_key(code)` / `render(frame, area)` methods
+- Keyboard: T cycles format, arrows/Tab navigate directory, Enter exports, Esc cancels
+- `perform_export(cells)` — calls output module, writes to file, sets error on failure
+
+Integration in `tui/mod.rs`:
+- `export_dialog: export::ExportDialog` field on `TuiApp`
+- Ctrl+E opens export dialog (Png for ImageEditor/AsciiPreview, Txt for FontEditor)
+- Dialog overlay rendered at same position as file_ops overlay
+- Key dispatch routes to dialog when active, performs export on Enter finalization
+
+Added `gif = "0.13"` dependency to Cargo.toml. 23 new tests across output.rs + export.rs
+covering PNG/TXT/GIF export, roundtrip, size checks, dialog open/close/format/path entry.
+fmt and clippy pass clean.
+
+Self-review fix: reordered `handle_key()` match arms so `T`/`t` format toggle
+precedes generic `Char(c)` catch-all. Fixed 3 tests with wrong expected values
+(roundtrip pixel coords, path entry account for "export.png" prefix).
+
+### 2.7.5 — Config file
+
+Created `figby-rs/src/config.rs` with `FigbyConfig` struct (`#[derive(Deserialize)]`)
+and TOML parsing. Sections:
+- `[cli]` — `font`, `output_width`, `color_mode` (all `Option<T>`)
+- `[tui]` — `theme`, `recent_files_max` (both `Option`)
+- `[tui.brush]` — `shape`, `size`, `density`, `ch` (all `Option`)
+
+Private helpers `config_file_path()` (respects `XDG_CONFIG_HOME`, fallback
+`~/.config/figby/config.toml`), `config_dir()` (parent dir, shared with
+`RecentFiles`), and public `load_config()` (returns defaults on any error —
+no `unwrap()` in production).
+
+Integration in `main.rs`:
+- `CliConfig` gained `color_mode: Option<String>` field
+- `from_args_with_config(args, config_file)` — applies config values as
+  fallback, then CLI flags override
+- `main()` calls `config::load_config()` before CLI dispatch
+
+Integration in `tui/mod.rs`:
+- `TuiApp::new()` loads config, applies brush defaults (shape/size/density/ch)
+  to `BrushState`, and `recent_files_max` to `RecentFiles`
+
+Integration in `file_ops.rs`:
+- `RecentFiles::storage_path()` now derives from `config_dir()` → `recent_files.json`
+  (was `XDG_DATA_HOME/figby/recent.json` or `~/.figby/recent.json`)
+- Added `set_max()` method to `RecentFiles`
+
+17 unit tests: full config parse, partial (CLI-only, brush-only), empty TOML,
+missing file returns defaults, bad TOML returns defaults, CLI override hierarchy
+(4 tests: CLI wins, config fallback, partial mix, color_mode field), color_mode
+default, recent files roundtrip (updated for new path). fmt and clippy pass clean.
+
+### 2.7.6 — Undo/redo system
+
+Created `figby-rs/src/tui/undo.rs` with `UndoEntry` (buffer + label) and
+`UndoSystem` (undo/redo Vec stacks, configurable limit, batch support for
+drag operations). Key methods: `push_snapshot()`, `undo()`, `redo()`,
+`begin_batch()`/`end_batch()`, `clear()`, `can_undo()`, `can_redo()`.
+Batching: during a drag sequence, only the first snapshot pushes; subsequent
+pushes are discarded until `end_batch()`. No `unwrap()` in production.
+
+Created `figby-rs/src/tui/undo_panel.rs` with `UndoPanel` — toggleable overlay
+showing undo history entries with scroll and cursor indicator.
+
+Modified `figby-rs/src/tui/mod.rs`:
+- Added `undo` and `undo_panel` fields to `TuiApp`
+- `push_undo_snapshot(label)` helper captures canvas state
+- Snapshots pushed before: brush/eraser/line/fill/spray actions (mouse + keyboard),
+  text block operations, selection operations (move/delete/cut/paste)
+- Batched undo for mouse-drag operations (begin_batch on Down, end_batch on Up)
+- Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo
+- Ctrl+Shift+H toggles undo history panel
+- Undo cleared on: canvas resize, font load, image load, mode switch
+
+Modified `figby-rs/src/tui/font_editor.rs`:
+- Removed per-char `undo_stack`/`redo_stack` fields, `undo_char()`/`redo_char()`
+  methods, and Ctrl+Z/Y handling from char editor — delegates to global undo
+
+Modified `figby-rs/src/config.rs`: Added `undo_limit: Option<usize>` (default 50 in
+code, no limit in config means default).
+
+16 unit tests: push/pop, undo/redo cycle, multiple actions, limit enforcement
+(60→50), clear, batch first-pushes-rest-discarded, two batches independent,
+empty undo/redo returns None, history entries order, redo label. fmt and clippy
+pass clean.

@@ -455,3 +455,50 @@ DONE: 2.6.5 merged into release/2.6.
 
 All 2.6 tasks complete. Starting phase review.
 >>>>>>> release/2.6
+
+## 2026-06-13 18:59
+
+PHASE_COMPLETE: 2.6 merged to main after review approval.
+
+## 2026-06-13 19:06
+
+DONE: 2.7.1 merged into release/2.7.
+
+## 2026-06-13 19:14
+
+DONE: 2.7.2 merged into release/2.7.
+
+## 2026-06-13 19:19
+
+DONE: 2.7.3 merged into release/2.7.
+
+## 2026-06-13 19:32
+
+DONE: 2.7.4 merged into release/2.7.
+
+## 2026-06-13 19:38
+
+DONE: 2.7.5 merged into release/2.7.
+
+## 2026-06-13 19:49
+
+DONE: 2.7.6 merged into release/2.7.
+
+## 2026-06-13 19:49
+
+Graceful stop. Tasks completed: 20.
+
+## 2026-06-13 21:14
+
+All 2.7 tasks complete. Starting phase review.
+
+## 2026-06-13 21:20
+
+DONE: 2.7.7 merged into release/2.7.
+
+Note: v2.8 and v2.9 repurposed in-place (layers/timeline moved to v3).
+Ralph should skip phase review for 2.7 and proceed to 2.8 tasks:
+- 2.8.1 Component Architecture migration
+- 2.8.2 Remove termion, use crossterm everywhere
+- 2.8.3 Use ratatui init/run convenience functions
+- 2.8.4 Phase merge
