@@ -62,11 +62,22 @@ char, else space), producing blocky un-antialiased glyphs.
 ### E2E test checklists created
 - 9 checklist files in `docs/e2e-*.md` covering `--create-font`, CLI info codes, template system, image pipeline, and all TUI editor features (~275 test cases).
 
-### E2E testing: Sections 1 & 2 complete
-- Section 1 (Basic Font Creation): all 5 tests pass ✓
-- Section 2 (Generated Font Quality): all 5 tests pass ✓
-- Hardblank: only 1 occurrence (header), never in glyphs
-- Baseline: h=15 b=12, descenders on g/p/y extend below baseline
+### E2E testing: All 11 sections complete
+- **Section 1** (Basic Font Creation): all 5 pass ✓
+- **Section 2** (Generated Font Quality): all 5 pass ✓
+- **Section 3** (Header Parameters): all pass ✓
+- **Section 4** (Layout Modes): all 7 pass ✓
+- **Section 5** (Width & Justification): all 6 pass ✓
+- **Section 6** (Writing Direction): all 3 pass ✓
+- **Section 7** (C figlet comparison): C figlet can't load multi-char fonts ✓
+- **Section 8** (Deutsch): Keyboard reroute works, direct Unicode input crashes (pre-existing bug) ✓
+- **Section 9** (Paragraph): all pass ✓
+- **Section 10** (Spec Config): all pass ✓
+- **Section 11** (Edge Cases): all 5 pass ✓
+
+**Bugs found:**
+1. MAJOR: Direct Unicode input of Deutsch chars (ÄÖÜäöüß) panics with "missing char code 0" in `render.rs:14`. The `lookup_char` function falls back to code 0 when a char isn't found, but no font has code 0. Workaround: use keyboard reroute `[\]{|}~` with `-D`.
+2. MINOR: Multi-char charset smushing creates heavy overlap — traditional FIGlet smush rules (H1-H6) weren't designed for shaded characters.
 
 ---
 
