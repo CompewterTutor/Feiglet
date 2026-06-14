@@ -578,3 +578,7 @@ DONE: 2.10.2 merged into release/2.10.
 ## 2026-06-13 23:41
 
 All 2.10 tasks complete. Starting phase review.
+
+## 2026-06-13 23:48
+
+PHASE_BLOCKED: 2.10 review failed after 3 auto-fix attempts. See /tmp/ralph-phase-review-2.10-3.log for the last reviewer output. Fix manually then re-run ralph.
