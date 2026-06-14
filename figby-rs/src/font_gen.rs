@@ -6,6 +6,7 @@ use font_kit::handle::Handle;
 use font_kit::hinting::HintingOptions;
 use font_kit::source::SystemSource;
 use pathfinder_geometry::transform2d::Transform2F;
+use pathfinder_geometry::vector::{Vector2F, Vector2I};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -213,64 +214,34 @@ pub fn generate_figfont(font: &FIGfont) -> String {
     result
 }
 
-/// Convert a rendered glyph canvas to a FIGcharacter.
+/// Convert a cell-sized canvas to a FIGcharacter.
 ///
-/// The canvas is sized to the glyph's raster bounds and contains the
-/// rendered monochrome bitmap. This function positions the glyph within
-/// the FIGfont cell based on the raster bounds origin relative to the baseline.
-fn canvas_to_figcharacter(
+/// The canvas is already sized to the FIGfont cell (charheight × glyph_width).
+/// The glyph was rendered at the correct baseline position within the canvas.
+/// Each canvas row maps directly to a FIGcharacter row.
+fn canvas_to_figcharacter_cell(
     canvas: &Canvas,
-    bounds_origin_y: i32,
-    hardblank: char,
+    fill_char: char,
     charheight: usize,
-    baseline: usize,
 ) -> FIGcharacter {
     let canvas_h = canvas.size.y() as usize;
     let canvas_w = canvas.size.x() as usize;
-
-    // Determine top padding: how many FIGfont rows above the glyph bitmap.
-    // bounds_origin_y is the y-offset from baseline to top of canvas in
-    // "origin at top-left" coordinates (negative = above baseline).
-    let top_padding = if bounds_origin_y < 0 {
-        let signed = baseline as i32 + bounds_origin_y;
-        if signed < 0 {
-            0
-        } else {
-            signed as usize
-        }
-    } else {
-        baseline + bounds_origin_y as usize
-    };
-
     let stride = canvas.stride;
     let threshold: u8 = 128;
 
     let mut rows = Vec::with_capacity(charheight);
-
-    // Top padding rows
-    for _ in 0..top_padding {
-        rows.push(" ".repeat(canvas_w));
-    }
-
-    // Glyph rows from canvas pixels
-    for r in 0..canvas_h {
+    for r in 0..canvas_h.min(charheight) {
         let row_start = r * stride;
         let mut row = String::with_capacity(canvas_w);
         for c in 0..canvas_w {
             let pixel = canvas.pixels[row_start + c];
-            row.push(if pixel > threshold { hardblank } else { ' ' });
+            row.push(if pixel > threshold { fill_char } else { ' ' });
         }
         rows.push(row);
     }
-
-    // Bottom padding
     while rows.len() < charheight {
         rows.push(" ".repeat(canvas_w));
     }
-
-    // Truncate if too tall (glyph exceeds the FIGfont cell)
-    rows.truncate(charheight);
-
     FIGcharacter::from(rows)
 }
 
@@ -304,7 +275,6 @@ pub fn system_font_to_figfont(name: &str, point_size: f32) -> Result<FIGfont, Fo
 
     let all_chars: Vec<u32> = (32u32..=126).chain(DEUTSCH_CHARS.iter().copied()).collect();
 
-    let transform = Transform2F::default();
     let hinting = HintingOptions::None;
     let raster_opts = RasterizationOptions::GrayscaleAa;
 
@@ -312,35 +282,45 @@ pub fn system_font_to_figfont(name: &str, point_size: f32) -> Result<FIGfont, Fo
         let c = char::from_u32(code).ok_or(FontGenError::NoGlyph(code))?;
         let glyph_id = font.glyph_for_char(c).ok_or(FontGenError::NoGlyph(code))?;
 
+        // Use raster_bounds to check if glyph is non-empty.
         let bounds = font
-            .raster_bounds(glyph_id, point_size, transform, hinting, raster_opts)
+            .raster_bounds(glyph_id, point_size, Transform2F::default(), hinting, raster_opts)
             .map_err(|_| FontGenError::NoGlyph(code))?;
 
         let size = bounds.size();
         if size.x() <= 0 || size.y() <= 0 {
-            // Empty glyph: insert space-padded character
             let ch = FIGcharacter::from(vec![" ".to_string(); charheight as usize]);
             figchars.insert(code, ch);
             continue;
         }
 
-        let mut canvas = Canvas::new(size, Format::A8);
+        // Allocate canvas at cell height so the FreeType bitmap always fits.
+        // The transform shifts the baseline down by `baseline` pixels so the
+        // rendered bitmap lands at the correct vertical position within the cell.
+        let cell_w = size.x().max(1);
+        let canvas_size = Vector2I::new(cell_w, charheight as i32);
+        let mut canvas = Canvas::new(canvas_size, Format::A8);
+
+        // Shift baseline to row `baseline` in the cell-sized canvas.
+        // font-kit converts pathfinder +y=down to FreeType +y=up internally,
+        // so a positive y shift here moves the render downward in the canvas.
+        let mut shifted_transform = Transform2F::default();
+        shifted_transform.vector = Vector2F::new(0.0, baseline as f32);
+
         font.rasterize_glyph(
             &mut canvas,
             glyph_id,
             point_size,
-            transform,
+            shifted_transform,
             hinting,
             raster_opts,
         )
         .map_err(|_| FontGenError::NoGlyph(code))?;
 
-        let ch = canvas_to_figcharacter(
+        let ch = canvas_to_figcharacter_cell(
             &canvas,
-            bounds.origin_y(),
-            hardblank,
+            '@',
             charheight as usize,
-            baseline as usize,
         );
         let width = ch.width() as u32;
         if width > maxlength {

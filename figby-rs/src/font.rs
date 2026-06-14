@@ -421,7 +421,9 @@ fn has_path_separator(name: &str) -> bool {
 fn font_candidates(name: &str, fontdir: &str) -> Vec<String> {
     use std::path::Path;
     let mut candidates = Vec::new();
-    if !has_path_separator(name) {
+    if has_path_separator(name) {
+        candidates.push(name.to_string());
+    } else {
         let dir = Path::new(fontdir);
         candidates.push(
             dir.join(format!("{}.flf", name))
@@ -430,7 +432,9 @@ fn font_candidates(name: &str, fontdir: &str) -> Vec<String> {
         );
     }
     candidates.push(format!("{}.flf", name));
-    if !has_path_separator(name) {
+    if has_path_separator(name) {
+        candidates.push(format!("{}.tlf", name));
+    } else {
         let dir = Path::new(fontdir);
         candidates.push(
             dir.join(format!("{}.tlf", name))
@@ -438,7 +442,6 @@ fn font_candidates(name: &str, fontdir: &str) -> Vec<String> {
                 .into_owned(),
         );
     }
-    candidates.push(format!("{}.tlf", name));
     candidates
 }
 
