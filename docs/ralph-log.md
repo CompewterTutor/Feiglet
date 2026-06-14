@@ -522,3 +522,7 @@ DONE: 2.8.2 merged into release/2.8.
 ## 2026-06-13 22:11
 
 DONE: 2.8.3 merged into release/2.8.
+
+## 2026-06-13 22:22
+
+DONE: 2.8.4 merged into master (upstream merge already complete). Stale task-2.8.4 deleted. Branch task-2.8.5 created.
