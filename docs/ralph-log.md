@@ -538,3 +538,27 @@ DONE: 2.8.4 merged into release/2.8.
 ## 2026-06-13 22:22
 
 All 2.8 tasks complete. Starting phase review.
+
+## 2026-06-13 22:24
+
+PHASE_COMPLETE: 2.8 merged to main after review approval.
+
+## 2026-06-13 22:33
+
+DONE: 2.9.1 merged into release/2.9.
+
+## 2026-06-13 22:39
+
+DONE: 2.9.2 merged into release/2.9.
+
+## 2026-06-13 22:47
+
+DONE: 2.9.3 merged into release/2.9.
+
+## 2026-06-13 23:03
+
+DONE: 2.9.4 merged into release/2.9.
+
+## 2026-06-13 23:08
+
+DONE: 2.9.5 merged into release/2.9.

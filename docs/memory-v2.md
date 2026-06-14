@@ -499,3 +499,70 @@ terminal size detection (2.8.2), replaced manual TUI init/teardown with ratatui
 convenience functions `ratatui::init()`/`ratatui::restore()` (2.8.3).
 All 3 subtasks (2.8.1–2.8.3) implemented, tested, merged. Phase 2.9 (UI Polish
 & Third-Party Widgets) is next.
+
+### 2.9.3 — Prettier status bar (LazyVim/Starship style)
+
+Redesigned `StatusBarComponent` in `components/status_bar.rs` with three-section
+layout (left/center/right) separated by `│`:
+
+- **Left section**: color-coded mode indicator (blue=FontEditor, green=ImageEditor,
+  yellow=ASCIIPreview), tool name with icon, cursor X/Y with crosshair icon, zoom
+  level with search icon
+- **Center section**: filename (with unsaved/saved dot), undo count (if > 0)
+- **Right section**: smoothed FPS counter (EMA with α=0.1), layer/Frame stubs (1/0
+  until Phase 3.x), UTC clock, git branch (if in repo)
+
+New fields added to `StatusBarComponent`: `mode`, `undo_count`, `fps`, `git_branch`,
+`clock_str`, `layer_count`, `animation_frame`.
+
+FPS tracking in `TuiApp`: `last_frame_time: Instant` + `fps: f64` fields. Computed
+as exponential moving average of instant frame rate each render cycle. Clock
+formatted as UTC HH:MM:SS via `SystemTime` (no new deps). Git branch detected
+once at startup via `git rev-parse --abbrev-ref HEAD`.
+
+No new dependencies (clock uses `SystemTime` directly, avoids `chrono`). fmt and
+clippy pass clean. Status bar area stays at `Constraint::Length(3)` with borders.
+
+### 2.9.4 — Theming system with YAML theme file
+
+Created `assets/tui/themes/default.yaml` — Tokyo Night-inspired dark theme with
+7 sections (toolbox, canvas, palette, statusbar, menu, dialog, general), each
+with hex RGB color tokens. Created `figby-rs/src/tui/theme.rs` with `Theme`
+struct, `load_default()` (embedded via `include_str!`), `load_custom(path)` (reads
+filesystem, falls back to default), `load_theme(&Option<String>)` dispatcher,
+and `color_from_hex()` helper. Intermediate YAML structs (`ThemeYaml`, `*Yaml`)
+with `Option<String>` fields convert to `Color::Rgb` via `From<ThemeYaml>` impl.
+
+Theme field added to: `StatusBarComponent`, `CanvasComponent`, `CanvasWidget`,
+`MenuBar`, `ExportDialog`, `FileOpsDialog`, `UndoPanel`, `Palette`, `Toolbox`,
+`FontEditor`, `CanvasSettings`. All hardcoded `Color::X` references in widget
+rendering replaced with `self.theme.section.token`. Theme stored as `Theme`
+on `TuiApp`, cloned to each component in `TuiApp::new()`.
+
+Config already had `theme: Option<String>` in `[tui]` section — no config.rs
+struct changes needed.
+
+6 unit tests: default theme load (Rgb verification), custom theme partial override,
+invalid path fallback, bad YAML fallback, dispatcher (None/"default"/custom path),
+hex parsing (valid/empty/invalid).
+
+### 2.9.6 — Fix brush tool display
+
+Replaced text-based brush preview (Shape/Size/Density labels + variable-size
+grid) with a fixed 5×5 mini-ASCII grid showing actual brush shape:
+
+- Added `BrushState::render_mini_preview()` — always returns 5×5 grid, centers
+  patterns smaller than 5, crops center for patterns larger than 5. Uses
+  `self.ch` (user's brush character) for filled cells.
+- Rewrote `BrushState::render()` to show `Char: {ch}` and `Size: {n}` labels
+  followed by 5×5 mini grid. Removed Shape/Density labels (redundant — shape
+  shown in toolbox, density only relevant for Spray).
+- Increased `tool_brush_chunks` constraint from `Constraint::Length(9)` to
+  `Constraint::Length(10)` for breathing room (2 labels + 1 blank + 5 grid = 8
+  inner lines with 10-char block).
+- 5 new unit tests: 5×5 grid size assertion, all sizes 1-20 across all shapes,
+  shape cycle produces unique output, brush char used for filled cells, size-1
+  square centered at (2,2).
+
+Old `render_preview()` and its preview functions (`render_square_preview`, etc.)
+kept unchanged for backward compatibility. fmt and clippy pass clean.

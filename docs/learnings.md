@@ -721,3 +721,49 @@ Three bugs found in phase merge review:
   but field renames in `mod.rs` break its compilation. Tests referencing old field names
   (`app.toolbox`, `app.canvas`, `app.brush`, `app.palette`) must be updated to match.
   These changes are a necessary consequence of the refactoring, not scope creep.
+
+## 2.9.1 — tui-menu integration
+
+- `tui-menu` 0.3.1 depends on `ratatui-core ^0.1.0` and `ratatui-widgets ^0.3.0` (part of
+  ratatui 0.30.x ecosystem) — compatible with existing ratatui 0.30.1.
+- `tui-menu` does NOT handle keyboard or mouse events internally. Caller must map key events
+  to `up/down/left/right/select/reset` calls on `MenuState`.
+- `MenuEvent` is a single-variant enum (`Selected(T)`), so `drain_events()` produces
+  irrefutable patterns. Use `drain_events().next()` with `let` destructuring to avoid
+  clippy `never_loop` and `irrefutable_let_patterns` warnings.
+- Layout changed from 3 chunks `[3, Min, 3]` to 4 chunks `[1, 3, Min, 3]` for menu bar.
+- Mouse clicks only work on menu bar labels, not dropdown items (tui-menu limitation).
+
+## 2.9.3 — Prettier status bar
+
+- Ratatui `Line` does not support mixed left/right alignment within a single
+  line. To implement LazyVim/Starship-style status bars with left/center/right
+  sections, compute left and right section widths via `chars().count()`, then
+  pad the center section with spaces to fill remaining terminal width. This is
+  the same approach used by vim/neovim statusline plugins.
+- `SystemTime::duration_since(UNIX_EPOCH)` returns `Result` (can fail if system
+  clock is before epoch). Using `unwrap_or_default()` safely falls back to
+  `Duration::ZERO` in edge cases, avoiding `unwrap()` in production.
+- Git branch detection via `std::process::Command` at startup avoids per-frame
+  subprocess overhead. The result is cached in `TuiApp.git_branch` for the
+  lifetime of the application session.
+- FPS EMa smoothing (α=0.1) provides stable display without flickering: the
+   instant FPS can vary wildly between frames (0-60+), but the smoothed value
+   converges within ~10 frames. This matches common game engine FPS counter
+   implementations.
+
+## 2.9.4 — Theming system with YAML theme file
+
+- Raw string literals `r#"..."#` in Rust terminate at `"#` — a YAML hex color
+  `"#ff0000"` contains `"#` which prematurely closes the raw string. Use `r##"..."##`
+  (double-hash delimiter) when the content contains `"#` sequences.
+- Deserializing `ratatui::style::Color` from YAML hex strings requires an intermediate
+  struct with `Option<String>` fields, then manual conversion to `Color::Rgb`. Using
+  `#[serde(deserialize_with)]` on each field is too verbose for 40+ tokens; the
+  intermediate struct + `From<ThemeYaml>` approach is cleaner.
+- Theme field on `CanvasWidget` (which implements `Widget for &CanvasWidget`) must be
+  a `pub` field accessed in `render(self, area, buf)`. The `Widget` trait has no
+  parameter for passing extra state — all context must be in `&self`.
+- When removing `Color` from a module's `use` statement, verify no remaining `Color::`
+  references exist in the file. grep for `Color::` to confirm zero matches across
+  production and test code.

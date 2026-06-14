@@ -563,7 +563,7 @@ overlay, layers, and animation timeline.
 
 ## Phase 2.9 — UI Polish & Third-Party Widgets
 
-- [ ] `2.9.1` Add `tui-menu` ratatui widget
+- [x] `2.9.1` Add `tui-menu` ratatui widget
   - **Goal:** Add `tui-menu` crate. Replace ad-hoc dialog key handlers with
     proper menu bar: File (Open, Save, Save As, Export, Quit), Edit (Undo,
     Redo, Cut, Copy, Paste), View (Zoom In, Zoom Out, Toggle Grid, Toggle
@@ -574,7 +574,7 @@ overlay, layers, and animation timeline.
   - **Tests:** Click each menu item. Keyboard navigation works.
   - **Difficulty:** Medium
 
-- [ ] `2.9.2` Add throbber for async tasks
+- [x] `2.9.2` Add throbber for async tasks
   - **Goal:** Add `throbber` or build simple spinner widget. Show during:
     image loading, GIF export, font generation, file I/O operations.
     Animated spinner (e.g. `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`) in status bar or modal
@@ -585,7 +585,7 @@ overlay, layers, and animation timeline.
   - **Tests:** Trigger slow op, verify spinner animation.
   - **Difficulty:** Medium
 
-- [ ] `2.9.3` Prettier status bar (LazyVim/Starship style)
+- [x] `2.9.3` Prettier status bar (LazyVim/Starship style)
   - **Goal:** Redesign status bar with sections: left (mode, tool name,
     cursor X/Y, zoom), center (file name, unsaved dot, undo count),
     right (FPS, layer count, animation frame, clock). Use styled
@@ -596,7 +596,7 @@ overlay, layers, and animation timeline.
   - **Tests:** Visual review.
   - **Difficulty:** Low
 
-- [ ] `2.9.4` Theming system with YAML theme file
+- [x] `2.9.4` Theming system with YAML theme file
   - **Goal:** Create `assets/tui/themes/` directory with default theme
     YAML. Theme defines color tokens per UI element: `toolbox.bg`,
     `toolbox.fg`, `toolbox.selected`, `canvas.grid`, `canvas.cursor`,
@@ -612,7 +612,7 @@ overlay, layers, and animation timeline.
   - **Tests:** Load default theme, verify colors match. Load custom theme.
   - **Difficulty:** Medium
 
-- [ ] `2.9.5` Migrate mode tabs to `Tabs` widget (fix existing usage)
+- [x] `2.9.5` Migrate mode tabs to `Tabs` widget (fix existing usage)
   - **Goal:** Current mode tabs in `render()` use `Tabs::new(titles)` with
     hardcoded strings. Fix: use icons from `icons.yaml` for tab labels
     (` Font Editor`, ` Image Editor`, ` ASCII Preview`). Style tabs
@@ -623,7 +623,7 @@ overlay, layers, and animation timeline.
   - **Tests:** Visual review. Keyboard cycle test.
   - **Difficulty:** Low
 
-- [ ] `2.9.6` Fix brush tool display
+- [x] `2.9.6` Fix brush tool display
   - **Goal:** Brush preview in toolbox (tool_brush_chunks[1]) currently
     renders a simple text description. Fix: render a mini ASCII preview
     of the brush shape (e.g. a 5×5 grid showing which cells the brush

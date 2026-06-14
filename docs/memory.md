@@ -1179,3 +1179,80 @@ terminal size detection (2.8.2), replaced manual TUI init/teardown with ratatui
 convenience functions `ratatui::init()`/`ratatui::restore()` (2.8.3).
 All 3 subtasks (2.8.1–2.8.3) implemented, tested, merged. Phase 2.9 (UI Polish
 & Third-Party Widgets) is next.
+
+### 2.9.1 — Add `tui-menu` ratatui widget
+
+Added `tui-menu = "0.3.1"` dependency to `Cargo.toml`. Created `figby-rs/src/tui/menu.rs`
+with `MenuAction` enum (17 variants for File/Edit/View/Tools/Help) and `MenuBar` struct
+wrapping `MenuState<MenuAction>`. `MenuBar` handles keyboard (Alt+F/E/V/T/H to open,
+Enter/arrows to navigate, Esc to close) and mouse (click menu labels). `handle_menu_action()`
+delegates to existing methods: `start_open/save/save_as()`, undo/redo, zoom, tool selection,
+clipboard ops, grid toggle, undo panel toggle, export dialog, quit.
+
+Integration in `mod.rs`:
+- Layout changed from 3 chunks to 4: menu bar (1 line), tabs (3 lines), main (min), status (3)
+- `menu_bar` field on `TuiApp`, initialized in `new()`
+- `handle_key_event()`: menu active guard before undo/redo; Alt+key activation before normal flow
+- `handle_mouse_event()`: menu bar click intercepted first
+- `drain_actions()` called after menu key events in both keyboard and mouse paths
+- `Action::Menu(MenuAction)` variant added to `Action` enum
+
+`tui-menu` does not handle mouse clicks on dropdown items — only menu bar labels.
+Keyboard navigation works for submenus via Enter/arrows. fmt and clippy pass clean.
+
+### 2.9.2 — Add throbber for async tasks
+
+Created `figby-rs/src/tui/throbber.rs` with `ThrobberState` struct:
+- Braille spinner sequence (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`) as frames
+- `tick()` advances frame index, wraps at `frames.len()`
+- `start(msg)` / `stop()` control active flag + optional message
+- `is_active() -> bool` getter
+- `render_string()` returns spinner char + message when active, empty string when inactive
+- 7 unit tests: tick cycle, start/stop, render active/inactive, frame change, inactive tick noop, multiple start/stop
+
+Async thread spawning in `mod.rs`:
+- `AsyncResult` enum with `SaveComplete`, `OpenComplete`, `ExportComplete`, `AutoSaveComplete` variants
+- Long operations (`perform_save`, `perform_open`, `perform_export`, `start_save`, auto-save) spawn `std::thread::spawn` with cloned data
+- `mpsc::channel` sends results back to main thread
+- `check_async_completion()` polls channel via `try_recv()` during each render frame with `&mut self`
+- `Double-spawn guard`: `throbber.is_active()` checked before spawning any new thread
+- Auto-save also guards on `throbber.is_active()` and spawns asynchronously
+
+Status bar integration:
+- `throbber_text: String` field on `StatusBarComponent`
+- Throbber string appended to status bar line when active (e.g. `⠋ Saving...`)
+- `render_string()` called each frame and set on status bar before draw
+
+No `.unwrap()` in production — all thread results handled via `match`. fmt and clippy pass clean.
+
+### 2.9.3 — Prettier status bar (LazyVim/Starship style)
+
+Redesigned `StatusBarComponent` in `components/status_bar.rs` with three-section
+layout (left/center/right) separated by `│`:
+
+- **Left section**: color-coded mode indicator (blue=FontEditor, green=ImageEditor,
+  yellow=ASCIIPreview), tool name with icon, cursor X/Y with crosshair icon, zoom
+  level with search icon
+- **Center section**: filename (with unsaved/saved dot), undo count (if > 0)
+- **Right section**: smoothed FPS counter (EMA with α=0.1), layer/Frame stubs (1/0
+  until Phase 3.x), UTC clock, git branch (if in repo)
+
+New fields added to `StatusBarComponent`: `mode`, `undo_count`, `fps`, `git_branch`,
+`clock_str`, `layer_count`, `animation_frame`.
+
+FPS tracking in `TuiApp`: `last_frame_time: Instant` + `fps: f64` fields. Computed
+as exponential moving average of instant frame rate each render cycle. Clock
+formatted as UTC HH:MM:SS via `SystemTime` (no new deps). Git branch detected
+once at startup via `git rev-parse --abbrev-ref HEAD`.
+
+### 2.9.5 — Migrate mode tabs to `Tabs` widget
+
+Changed `_icons` field to `pub icons` on `TuiApp` so tab rendering can read
+icon glyphs. Added `prev()` method to `AppMode` for Ctrl+Shift+Tab backward
+cycle. Rebuilt tab labels in `render()` using icons from `icons.yaml`
+(`mode_font_editor`, `mode_image_editor`, `mode_ascii_preview`) with fallback
+to plain labels. Removed `Block` with `"Mode"` title border wrapping tabs.
+Set inactive tab style to `theme.general.secondary` and active tab highlight
+to `theme.general.primary` (was `warning`/yellow). Replaced bare `KeyCode::Tab`
+handler with Ctrl+Tab (forward) and Ctrl+Shift+Tab (backward) mode cycling,
+both with `undo.clear()`. Only `figby-rs/src/tui/mod.rs` modified.

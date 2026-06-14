@@ -8,11 +8,12 @@ use rand::Rng;
 use rand::SeedableRng;
 use ratatui::layout::Rect;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Tabs};
 use ratatui::Frame;
 use std::collections::BTreeMap;
 use std::io;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::config;
@@ -26,8 +27,11 @@ pub mod export;
 pub mod file_ops;
 pub mod font_editor;
 pub mod image_editor;
+pub mod menu;
 pub mod palette;
 pub mod status;
+pub mod theme;
+pub mod throbber;
 pub mod toolbox;
 pub mod tools;
 pub mod undo;
@@ -37,8 +41,10 @@ pub use action::Action;
 pub use brush::BrushState;
 pub use component::Component;
 pub use export::ExportMode;
+pub use menu::MenuBar;
 pub use palette::Palette;
 pub use status::CanvasSettings;
+pub use throbber::ThrobberState;
 pub use toolbox::Tool;
 
 pub use components::canvas::CanvasComponent;
@@ -76,12 +82,21 @@ impl AppMode {
             AppMode::AsciiPreview => AppMode::FontEditor,
         }
     }
+
+    fn prev(&self) -> Self {
+        match self {
+            AppMode::FontEditor => AppMode::AsciiPreview,
+            AppMode::AsciiPreview => AppMode::ImageEditor,
+            AppMode::ImageEditor => AppMode::FontEditor,
+        }
+    }
 }
 
 pub struct TuiApp {
     pub mode: AppMode,
     pub should_quit: bool,
-    _icons: BTreeMap<String, String>,
+    pub icons: BTreeMap<String, String>,
+    pub menu_bar: MenuBar,
     pub toolbox_comp: ToolboxComponent,
     pub canvas_comp: CanvasComponent,
     pub palette_comp: PaletteComponent,
@@ -107,14 +122,22 @@ pub struct TuiApp {
     selection_lasso_points: Vec<(i16, i16)>,
     auto_save_interval: u64,
     last_save_time: Instant,
+    pub throbber: ThrobberState,
+    async_rx: Option<mpsc::Receiver<AsyncResult>>,
+    last_frame_time: Instant,
+    fps: f64,
+    git_branch: Option<String>,
+    pub theme: theme::Theme,
 }
 
 impl TuiApp {
     pub fn new() -> Self {
         let icons: BTreeMap<String, String> = serde_yaml::from_str(ICONS_YAML).unwrap_or_default();
         let config = config::load_config();
+        let theme = theme::load_theme(&config.tui.theme);
 
         let mut toolbox_comp = ToolboxComponent::new();
+        toolbox_comp.toolbox.theme = theme.clone();
         if let Some(ref shape) = config.tui.brush.shape {
             toolbox_comp.brush.shape = match shape.as_str() {
                 "square" => brush::BrushShape::Square,
@@ -137,24 +160,56 @@ impl TuiApp {
         }
 
         let mut font_editor_comp = FontEditorComponent::new();
+        font_editor_comp.editor.theme = theme.clone();
         if let Ok(font) = crate::font::load_font("standard", "fonts") {
             font_editor_comp.editor.load_font(font);
         }
 
         let mut file_ops_comp = FileOpsComponent::new();
+        file_ops_comp.dialog.theme = theme.clone();
         if let Some(max) = config.tui.recent_files_max {
             file_ops_comp.recent_files.set_max(max);
         }
 
-        let status_bar_comp = StatusBarComponent::new(icons.clone());
+        let mut status_bar_comp = StatusBarComponent::new(icons.clone());
+        status_bar_comp.theme = theme.clone();
+
+        let git_branch = std::process::Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    String::from_utf8(o.stdout)
+                        .ok()
+                        .map(|s| s.trim().to_string())
+                } else {
+                    None
+                }
+            });
+
+        let mut menu_bar = MenuBar::new();
+        menu_bar.theme = theme.clone();
+        let mut canvas_comp = CanvasComponent::new();
+        canvas_comp.theme = theme.clone();
+        canvas_comp.canvas.theme = theme.clone();
+        let mut palette_comp = PaletteComponent::new();
+        palette_comp.palette.theme = theme.clone();
+        let mut export_comp = ExportComponent::new();
+        export_comp.dialog.theme = theme.clone();
+        let mut undo_panel_comp = UndoPanelComponent::new();
+        undo_panel_comp.panel.theme = theme.clone();
+        let mut settings = status::CanvasSettings::new();
+        settings.theme = theme.clone();
 
         Self {
             mode: AppMode::FontEditor,
             should_quit: false,
-            _icons: icons,
+            icons,
+            menu_bar,
             toolbox_comp,
-            canvas_comp: CanvasComponent::new(),
-            palette_comp: PaletteComponent::new(),
+            canvas_comp,
+            palette_comp,
             text_tool: tools::text::TextToolState::new("fonts"),
             font_editor_comp,
             image_editor_comp: ImageEditorComponent::new(),
@@ -162,7 +217,7 @@ impl TuiApp {
             palette_area: Rect::new(0, 0, 0, 0),
             prev_mouse_buf: None,
             unsaved: false,
-            settings: status::CanvasSettings::new(),
+            settings,
             line_start: None,
             saved_buffer: None,
             selection: None,
@@ -171,12 +226,18 @@ impl TuiApp {
             selection_polygon_points: Vec::new(),
             selection_lasso_points: Vec::new(),
             file_ops_comp,
-            export_comp: ExportComponent::new(),
+            export_comp,
             auto_save_interval: 0,
             last_save_time: Instant::now(),
             undo: undo::UndoSystem::new(config.tui.undo_limit.unwrap_or(50)),
-            undo_panel_comp: UndoPanelComponent::new(),
+            undo_panel_comp,
             status_bar_comp,
+            throbber: ThrobberState::new(),
+            async_rx: None,
+            last_frame_time: Instant::now(),
+            fps: 0.0,
+            git_branch,
+            theme: theme.clone(),
         }
     }
 
@@ -215,35 +276,54 @@ impl TuiApp {
             Action::SaveAsRequested => self.perform_save(),
             Action::OpenRequested => self.perform_open(),
             Action::ExportRequested(_) => self.perform_export(),
+            Action::Menu(action) => self.handle_menu_action(action.clone()),
             _ => {}
         }
     }
 
     pub fn render(&mut self, frame: &mut Frame<'_>) {
+        self.check_async_completion();
+        self.throbber.tick();
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
+                Constraint::Length(1),
                 Constraint::Length(3),
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
             .split(frame.area());
 
-        let titles = vec![" Font Editor ", " Image Editor ", " ASCII Preview "];
+        self.menu_bar.draw(frame, chunks[0]);
+
+        let mode_labels = [
+            ("mode_font_editor", "Font Editor"),
+            ("mode_image_editor", "Image Editor"),
+            ("mode_ascii_preview", "ASCII Preview"),
+        ];
+        let titles: Vec<String> = mode_labels
+            .iter()
+            .map(|(key, name)| {
+                let icon = self.icons.get(*key).map(|s| s.as_str()).unwrap_or("");
+                format!("{icon}  {name}")
+            })
+            .collect();
         let selected = match self.mode {
             AppMode::FontEditor => 0,
             AppMode::ImageEditor => 1,
             AppMode::AsciiPreview => 2,
         };
-        let tabs = Tabs::new(titles)
-            .block(Block::default().title("Mode").borders(Borders::ALL))
+        let titles_refs: Vec<&str> = titles.iter().map(|s| s.as_str()).collect();
+        let tabs = Tabs::new(titles_refs)
+            .style(Style::default().fg(self.theme.general.secondary))
             .highlight_style(
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(self.theme.general.primary)
                     .add_modifier(Modifier::BOLD),
             )
             .select(selected);
-        frame.render_widget(tabs, chunks[0]);
+        frame.render_widget(tabs, chunks[1]);
 
         let main_chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -252,11 +332,11 @@ impl TuiApp {
                 Constraint::Min(10),
                 Constraint::Length(20),
             ])
-            .split(chunks[1]);
+            .split(chunks[2]);
 
         let tool_brush_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(10), Constraint::Length(9)])
+            .constraints([Constraint::Min(10), Constraint::Length(10)])
             .split(main_chunks[0]);
         self.toolbox_area = tool_brush_chunks[0];
         self.palette_area = main_chunks[2];
@@ -377,7 +457,7 @@ impl TuiApp {
             {
                 let edge = Block::default().borders(Borders::ALL).style(
                     Style::default()
-                        .fg(Color::DarkGray)
+                        .fg(self.theme.canvas.edge)
                         .add_modifier(Modifier::DIM),
                 );
                 frame.render_widget(edge, self.canvas_comp.canvas_inner_rect);
@@ -391,6 +471,17 @@ impl TuiApp {
         } else {
             let _ = self.palette_comp.draw(frame, main_chunks[2]);
         }
+
+        // FPS tracking
+        let now = Instant::now();
+        let elapsed = now - self.last_frame_time;
+        self.last_frame_time = now;
+        let instant_fps = if elapsed.as_secs_f64() > 0.0 {
+            1.0 / elapsed.as_secs_f64()
+        } else {
+            0.0
+        };
+        self.fps = self.fps * 0.9 + instant_fps * 0.1;
 
         // Status bar
         let mode_name = match self.mode {
@@ -438,7 +529,15 @@ impl TuiApp {
             .current_path
             .as_ref()
             .map(|p| p.to_string_lossy().to_string());
-        let _ = self.status_bar_comp.draw(frame, chunks[2]);
+        self.status_bar_comp.throbber_text = self.throbber.render_string();
+        self.status_bar_comp.mode = self.mode;
+        self.status_bar_comp.undo_count = self.undo.history_len();
+        self.status_bar_comp.fps = self.fps;
+        self.status_bar_comp.git_branch = self.git_branch.clone();
+        self.status_bar_comp.clock_str = format_clock();
+        self.status_bar_comp.layer_count = 1;
+        self.status_bar_comp.animation_frame = 0;
+        let _ = self.status_bar_comp.draw(frame, chunks[3]);
 
         // Export dialog overlay
         if self.export_comp.dialog.active {
@@ -552,6 +651,17 @@ impl TuiApp {
     }
 
     fn handle_mouse_event(&mut self, mouse: MouseEvent) {
+        // Menu bar mouse event
+        if self
+            .menu_bar
+            .handle_mouse_event(mouse.column, mouse.row, mouse.kind)
+        {
+            if let Some(action) = self.menu_bar.drain_actions() {
+                self.process_action(&Action::Menu(action));
+            }
+            return;
+        }
+
         if self.settings.settings_open {
             return;
         }
@@ -919,6 +1029,62 @@ impl TuiApp {
             .push_snapshot(self.canvas_comp.canvas.buffer.clone(), label.to_string());
     }
 
+    fn check_async_completion(&mut self) {
+        let rx = match self.async_rx.take() {
+            Some(rx) => rx,
+            None => return,
+        };
+        match rx.try_recv() {
+            Ok(result) => {
+                self.throbber.stop();
+                match result {
+                    AsyncResult::SaveComplete(r) => match r {
+                        Ok(path) => {
+                            self.unsaved = false;
+                            self.font_editor_comp.editor.current_path = Some(path);
+                            self.last_save_time = Instant::now();
+                            self.file_ops_comp.dialog.error_message.clear();
+                        }
+                        Err(e) => {
+                            self.file_ops_comp.dialog.error_message = format!("Save failed: {e}");
+                        }
+                    },
+                    AsyncResult::OpenComplete(r) => match r {
+                        Ok((font, path)) => {
+                            self.unsaved = false;
+                            self.undo.clear();
+                            self.font_editor_comp.editor.load_font(font);
+                            self.font_editor_comp.editor.current_path = Some(path.clone());
+                            self.file_ops_comp.recent_files.push(path);
+                            self.file_ops_comp.recent_files.save_to_disk();
+                            self.file_ops_comp.dialog.error_message.clear();
+                        }
+                        Err(e) => {
+                            self.file_ops_comp.dialog.error_message = e;
+                            self.file_ops_comp.dialog.mode = file_ops::FileOpsMode::Open;
+                        }
+                    },
+                    AsyncResult::ExportComplete(r) => match r {
+                        Ok(()) => {
+                            self.export_comp.dialog.active = false;
+                        }
+                        Err(e) => {
+                            self.export_comp.dialog.error_message = e;
+                            self.export_comp.dialog.active = true;
+                        }
+                    },
+                    AsyncResult::AutoSaveComplete => {}
+                }
+            }
+            Err(mpsc::TryRecvError::Empty) => {
+                self.async_rx = Some(rx);
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.throbber.stop();
+            }
+        }
+    }
+
     pub fn handle_event(&mut self) -> io::Result<()> {
         if event::poll(Duration::from_millis(100))? {
             loop {
@@ -944,12 +1110,24 @@ impl TuiApp {
         }
 
         // Auto-save check
-        if self.auto_save_interval > 0 && self.unsaved && self.mode == AppMode::FontEditor {
+        if self.auto_save_interval > 0
+            && self.unsaved
+            && self.mode == AppMode::FontEditor
+            && !self.throbber.is_active()
+        {
             if let Some(ref path) = self.font_editor_comp.editor.current_path {
                 if self.last_save_time.elapsed() >= Duration::from_secs(self.auto_save_interval) {
                     if let Some(ref font) = self.font_editor_comp.editor.font {
-                        let _ = file_ops::save_font(font, path);
                         self.last_save_time = Instant::now();
+                        let font = font.clone();
+                        let path = path.clone();
+                        let (tx, rx) = mpsc::channel();
+                        self.async_rx = Some(rx);
+                        self.throbber.start("Auto-saving...");
+                        std::thread::spawn(move || {
+                            let _ = file_ops::save_font(&font, &path);
+                            let _ = tx.send(AsyncResult::AutoSaveComplete);
+                        });
                     }
                 }
             }
@@ -995,6 +1173,20 @@ impl TuiApp {
         // Undo history panel open: dispatch to it first
         if self.undo_panel_comp.panel.open {
             self.undo_panel_comp.panel.handle_key(code);
+            return None;
+        }
+
+        // Menu bar active: dispatch all keys to it
+        if self.menu_bar.is_active() {
+            self.menu_bar.handle_key_event(key);
+            if let Some(action) = self.menu_bar.drain_actions() {
+                return Some(Action::Menu(action));
+            }
+            return None;
+        }
+
+        // Alt+key: open menu bar
+        if modifiers == KeyModifiers::ALT && self.menu_bar.handle_key_event(key) {
             return None;
         }
 
@@ -1466,12 +1658,19 @@ impl TuiApp {
             return None;
         }
 
+        // Ctrl+Tab / Ctrl+Shift+Tab: cycle modes
+        if code == KeyCode::Tab && modifiers.contains(KeyModifiers::CONTROL) {
+            let new_mode = if modifiers.contains(KeyModifiers::SHIFT) {
+                self.mode.prev()
+            } else {
+                self.mode.next()
+            };
+            self.mode = new_mode;
+            self.undo.clear();
+            return Some(Action::ModeChanged);
+        }
+
         match code {
-            KeyCode::Tab => {
-                self.mode = self.mode.next();
-                self.undo.clear();
-                Some(Action::ModeChanged)
-            }
             KeyCode::Char('q') if !modifiers.contains(KeyModifiers::CONTROL) => {
                 self.should_quit = true;
                 Some(Action::Quit)
@@ -1498,19 +1697,24 @@ impl TuiApp {
         }
         if let Some(ref path) = self.font_editor_comp.editor.current_path {
             if let Some(ref font) = self.font_editor_comp.editor.font {
-                match file_ops::save_font(font, path) {
-                    Ok(()) => {
-                        self.unsaved = false;
-                        self.last_save_time = Instant::now();
-                    }
-                    Err(e) => {
-                        self.file_ops_comp.dialog.error_message = format!("Save failed: {e}");
-                    }
+                if self.throbber.is_active() {
+                    return;
                 }
+                let font = font.clone();
+                let path = path.clone();
+                let (tx, rx) = mpsc::channel();
+                self.async_rx = Some(rx);
+                self.throbber.start("Saving...");
+                std::thread::spawn(move || {
+                    let result = file_ops::save_font(&font, &path)
+                        .map(|_| path)
+                        .map_err(|e| e.to_string());
+                    let _ = tx.send(AsyncResult::SaveComplete(result));
+                });
+                return;
             }
-        } else {
-            self.start_save_as();
         }
+        self.start_save_as();
     }
 
     fn start_save_as(&mut self) {
@@ -1523,20 +1727,24 @@ impl TuiApp {
     }
 
     fn perform_save(&mut self) {
-        let path = self.file_ops_comp.dialog.selected_path();
-        if let Some(ref font) = self.font_editor_comp.editor.font {
-            match file_ops::save_font(font, &path) {
-                Ok(()) => {
-                    self.unsaved = false;
-                    self.font_editor_comp.editor.current_path = Some(path);
-                    self.last_save_time = Instant::now();
-                    self.file_ops_comp.dialog.error_message.clear();
-                }
-                Err(e) => {
-                    self.file_ops_comp.dialog.error_message = format!("Save failed: {e}");
-                }
-            }
+        if self.throbber.is_active() {
+            return;
         }
+        let path = self.file_ops_comp.dialog.selected_path();
+        let font = match &self.font_editor_comp.editor.font {
+            Some(f) => f.clone(),
+            None => return,
+        };
+        let result_path = path.clone();
+        let (tx, rx) = mpsc::channel();
+        self.async_rx = Some(rx);
+        self.throbber.start("Saving...");
+        std::thread::spawn(move || {
+            let result = file_ops::save_font(&font, &result_path)
+                .map(|_| result_path)
+                .map_err(|e| e.to_string());
+            let _ = tx.send(AsyncResult::SaveComplete(result));
+        });
     }
 
     fn handle_paste_event(&mut self, text: String) {
@@ -1555,33 +1763,30 @@ impl TuiApp {
     }
 
     fn perform_open(&mut self) {
+        if self.throbber.is_active() {
+            return;
+        }
         let path = self.file_ops_comp.dialog.selected_path();
-        let content = match std::fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(e) => {
-                self.file_ops_comp.dialog.error_message = format!("Cannot read file: {e}");
-                self.file_ops_comp.dialog.mode = file_ops::FileOpsMode::Open;
-                return;
-            }
-        };
-        let font = match crate::font::parse_tlf_font(&content) {
-            Ok(f) => f,
-            Err(e) => {
-                self.file_ops_comp.dialog.error_message = format!("Parse error: {e}");
-                self.file_ops_comp.dialog.mode = file_ops::FileOpsMode::Open;
-                return;
-            }
-        };
-        self.unsaved = false;
-        self.undo.clear();
-        self.font_editor_comp.editor.load_font(font);
-        self.font_editor_comp.editor.current_path = Some(path.clone());
-        self.file_ops_comp.recent_files.push(path);
-        self.file_ops_comp.recent_files.save_to_disk();
-        self.file_ops_comp.dialog.error_message.clear();
+        let path_clone = path.clone();
+        let (tx, rx) = mpsc::channel();
+        self.async_rx = Some(rx);
+        self.throbber.start("Loading...");
+        std::thread::spawn(move || {
+            let result = (|| -> Result<(crate::font::FIGfont, std::path::PathBuf), String> {
+                let content = std::fs::read_to_string(&path_clone)
+                    .map_err(|e| format!("Cannot read file: {e}"))?;
+                let font = crate::font::parse_tlf_font(&content)
+                    .map_err(|e| format!("Parse error: {e}"))?;
+                Ok((font, path_clone))
+            })();
+            let _ = tx.send(AsyncResult::OpenComplete(result));
+        });
     }
 
     fn perform_export(&mut self) {
+        if self.throbber.is_active() {
+            return;
+        }
         let cells: Vec<Vec<canvas::CanvasCell>> = (0..self.canvas_comp.canvas.buffer.height())
             .map(|y| {
                 (0..self.canvas_comp.canvas.buffer.width())
@@ -1596,13 +1801,157 @@ impl TuiApp {
                     .collect()
             })
             .collect();
-        match self.export_comp.dialog.perform_export(&cells) {
-            Ok(()) => {
-                self.export_comp.dialog.active = false;
+        let format = self.export_comp.dialog.format;
+        let font_size = self.export_comp.dialog.font_size;
+        let path_buf = std::path::PathBuf::from(&self.export_comp.dialog.path_buffer);
+        let (tx, rx) = mpsc::channel();
+        self.async_rx = Some(rx);
+        self.throbber.start("Exporting...");
+        std::thread::spawn(move || {
+            let result = (|| -> Result<(), String> {
+                if path_buf.as_os_str().is_empty() {
+                    return Err("no path specified".to_string());
+                }
+                let bytes: Vec<u8> = match format {
+                    crate::tui::export::ExportMode::Png => {
+                        crate::output::export_cells_to_png(&cells, font_size)
+                            .map_err(|e| e.to_string())?
+                    }
+                    crate::tui::export::ExportMode::Txt => {
+                        crate::output::export_cells_to_txt(&cells).into_bytes()
+                    }
+                    crate::tui::export::ExportMode::Gif => {
+                        crate::output::export_cells_to_gif(&[cells], &[10], font_size)
+                            .map_err(|e| e.to_string())?
+                    }
+                };
+                std::fs::write(&path_buf, &bytes).map_err(|e| format!("IoError({e})"))?;
+                Ok(())
+            })();
+            let _ = tx.send(AsyncResult::ExportComplete(result));
+        });
+    }
+
+    fn handle_menu_action(&mut self, action: menu::MenuAction) {
+        match action {
+            menu::MenuAction::FileOpen => {
+                self.start_open();
+                self.menu_bar.reset();
             }
-            Err(e) => {
-                self.export_comp.dialog.error_message = format!("Export failed: {e}");
-                self.export_comp.dialog.active = true;
+            menu::MenuAction::FileSave => {
+                self.start_save();
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::FileSaveAs => {
+                self.start_save_as();
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::FileExport => {
+                let mode = match self.mode {
+                    AppMode::FontEditor => export::ExportMode::Txt,
+                    _ => export::ExportMode::Png,
+                };
+                self.export_comp.dialog.enter_export(mode);
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::FileQuit => {
+                self.should_quit = true;
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::EditUndo => {
+                if self.undo.can_undo() {
+                    let empty = canvas::CanvasBuffer::new(1, 1);
+                    let cur = std::mem::replace(&mut self.canvas_comp.canvas.buffer, empty);
+                    if let Some((buf, _)) = self.undo.undo(cur) {
+                        self.canvas_comp.canvas.buffer = buf;
+                        self.unsaved = true;
+                    }
+                }
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::EditRedo => {
+                if self.undo.can_redo() {
+                    let empty = canvas::CanvasBuffer::new(1, 1);
+                    let cur = std::mem::replace(&mut self.canvas_comp.canvas.buffer, empty);
+                    if let Some((buf, _)) = self.undo.redo(cur) {
+                        self.canvas_comp.canvas.buffer = buf;
+                        self.unsaved = true;
+                    }
+                }
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::EditCut => {
+                if let Some(ref sel) = self.selection {
+                    if sel.is_active() {
+                        self.push_undo_snapshot("Cut selection");
+                        if let Some(sel_owned) = self.selection.take() {
+                            self.clipboard =
+                                Some(sel_owned.cut_from(&mut self.canvas_comp.canvas.buffer));
+                            self.unsaved = true;
+                        }
+                    }
+                }
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::EditCopy => {
+                if let Some(ref sel) = self.selection {
+                    if sel.is_active() {
+                        self.clipboard = Some(sel.copy_from(&self.canvas_comp.canvas.buffer));
+                    }
+                }
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::EditPaste => {
+                if self.clipboard.is_some() {
+                    self.push_undo_snapshot("Paste");
+                    let clip = self.clipboard.clone();
+                    if let Some(ref clip_data) = clip {
+                        let (cx, cy) = self.canvas_comp.canvas.cursor();
+                        tools::selection::Selection::paste_into(
+                            &mut self.canvas_comp.canvas.buffer,
+                            clip_data,
+                            cx as i16,
+                            cy as i16,
+                        );
+                        self.unsaved = true;
+                    }
+                }
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::ViewZoomIn => {
+                if self.canvas_comp.canvas.zoom_level() < 8 {
+                    self.canvas_comp.canvas.zoom_in();
+                }
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::ViewZoomOut => {
+                if self.canvas_comp.canvas.zoom_level() > 1 {
+                    self.canvas_comp.canvas.zoom_out();
+                }
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::ViewToggleGrid => {
+                self.canvas_comp.canvas.toggle_grid();
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::ViewToggleUndoPanel => {
+                self.undo_panel_comp.panel.toggle();
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::ToolsSelect(tool) => {
+                self.toolbox_comp.toolbox.selected = tool;
+                if tool != toolbox::Tool::PolygonSelect {
+                    self.selection_polygon_points.clear();
+                }
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::HelpAbout => {
+                // Show simple about message - deferred to proper dialog
+                self.menu_bar.reset();
+            }
+            menu::MenuAction::HelpKeybindings => {
+                // Show keybindings - deferred to proper dialog
+                self.menu_bar.reset();
             }
         }
     }
@@ -1622,8 +1971,26 @@ impl TuiApp {
     }
 }
 
+pub enum AsyncResult {
+    SaveComplete(Result<std::path::PathBuf, String>),
+    OpenComplete(Result<(crate::font::FIGfont, std::path::PathBuf), String>),
+    ExportComplete(Result<(), String>),
+    AutoSaveComplete,
+}
+
 impl Default for TuiApp {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn format_clock() -> String {
+    let since_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let total_secs = since_epoch.as_secs();
+    let h = (total_secs / 3600) % 24;
+    let m = (total_secs / 60) % 60;
+    let s = total_secs % 60;
+    format!("{h:02}:{m:02}:{s:02}")
 }
